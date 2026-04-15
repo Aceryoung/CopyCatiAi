@@ -1,10 +1,10 @@
 
 
-
-"use client"; // [💡 필수] Next.js 13+ App Router에서 상태(useState)를 쓰기 위한 클라이언트 선언
+"use client";
 
 import React, { useState, useEffect } from 'react';
 import { createClient, Session } from "@supabase/supabase-js";
+import { PricingModal } from './components/PricingModal';
 
 /* ── Supabase Client ── */
 const supabase = createClient(
@@ -42,8 +42,10 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showLoginSheet, setShowLoginSheet] = useState(false);
   const [showHistorySheet, setShowHistorySheet] = useState(false);
+  const [showPricingModal, setShowPricingModal] = useState(false);
   const [historyItems, setHistoryItems] = useState<Array<{id: string; source_url: string; created_at: string}>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [credits, setCredits] = useState<number | null>(null);
 
   const [inputMode, setInputMode] = useState('url');
   const [url, setUrl] = useState('');
@@ -72,6 +74,25 @@ export default function App() {
 
   const isLoggedIn = !!session;
   const accessToken = session?.access_token ?? '';
+
+  // --- [크레딧 조회] ---
+  const fetchCredits = async (userId: string) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any)
+        .from('profiles')
+        .select('credits')
+        .eq('id', userId)
+        .single();
+      if (data) setCredits(data.credits);
+    } catch (e) {
+      console.error('credit fetch error:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (session?.user?.id) fetchCredits(session.user.id);
+  }, [session]);
 
   // --- [히스토리 불러오기] ---
   const fetchHistory = async () => {
@@ -164,6 +185,7 @@ export default function App() {
 
         if (errCode.includes("INSUFFICIENT_CREDITS")) {
           addToast("크레딧이 부족합니다. 충전 후 다시 시도해 주세요.", "error");
+          setShowPricingModal(true); // 크레딧 0 → 결제 모달 자동 오픈
         } else if (errCode.includes("REGEN_LIMIT_REACHED")) {
           addToast("오늘 해당 URL의 재생성 한도(3회)에 도달했습니다.", "error");
         } else if (errCode.includes("OPENAI_QUOTA_EXCEEDED")) {
@@ -245,6 +267,16 @@ export default function App() {
           </button>
         ) : (
           <div className="flex items-center gap-2">
+            {/* 크레딧 칩 */}
+            {credits !== null && (
+              <button
+                onClick={() => setShowPricingModal(true)}
+                className="flex items-center gap-1.5 px-3 h-9 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-sm font-semibold hover:bg-blue-100 transition-colors"
+              >
+                <span className="text-xs text-blue-400 font-normal">크레딧</span>
+                <span>{credits}</span>
+              </button>
+            )}
             <button onClick={() => { setShowHistorySheet(true); fetchHistory(); }} className="p-2 text-slate-500 hover:text-slate-800 transition-colors">
               <HistoryIcon />
             </button>
@@ -491,6 +523,17 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Pricing Modal (portal-root에 렌더 — 390px 바깥) */}
+      <PricingModal
+        isOpen={showPricingModal}
+        onClose={() => setShowPricingModal(false)}
+        userEmail={session?.user?.email}
+        onSuccess={() => {
+          if (session?.user?.id) fetchCredits(session.user.id);
+          addToast('결제가 완료되었습니다! 크레딧이 충전되었습니다.', 'success');
+        }}
+      />
 
       {/* History Modal */}
       {showHistorySheet && (

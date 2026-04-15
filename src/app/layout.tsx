@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const inter = Inter({
@@ -40,9 +41,17 @@ export default function RootLayout({
         className={`${inter.variable} antialiased`}
         style={{ fontFamily: "'Pretendard Variable', var(--font-inter), system-ui, sans-serif" }}
       >
+        {/* 메인 앱 컨테이너 (390px 모바일 고정) */}
         <div className="max-w-[390px] mx-auto min-h-screen bg-slate-50 relative overflow-x-hidden">
           {children}
         </div>
+        {/* 결제 모달 포털 (전체 화면 사용 — 390px 래퍼 바깥) */}
+        <div id="portal-root" />
+        {/* PortOne (아임포트) SDK — lazyOnload로 Hydration 에러 방지 */}
+        <Script
+          src="https://cdn.iamport.kr/v1/iamport.js"
+          strategy="lazyOnload"
+        />
       </body>
     </html>
   );
