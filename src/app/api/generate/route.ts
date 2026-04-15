@@ -99,28 +99,6 @@ export async function POST(req: NextRequest) {
     const scrapedText: string | undefined = body?.scraped_text;
     const manualText: string | undefined = body?.manual_text;
 
-    // ==========================================
-    // 방어 1단계: 원자적 크레딧 선차감
-    // ==========================================
-    // FOR UPDATE Row-Lock → 동시 요청이 와도 마이너스/2중 차감 절대 불가
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: isDeducted, error: deductError } = await (supabase as any).rpc(
-      'deduct_credit_atomic',
-      { p_user_id: userId }
-    );
-
-    // 차감 실패(잔액 부족 또는 DB 에러) → 즉시 튕겨냄
-    if (deductError || !isDeducted) {
-      console.error('[generate] 크레딧 차감 실패:', deductError ?? '잔액 부족');
-      return NextResponse.json(
-        { error: 'INSUFFICIENT_CREDITS: 크레딧이 부족하거나 차감에 실패했습니다.' },
-        { status: 402 }
-      );
-    }
-
-    // 선차감 성공 → 이젠 에러 시 반드시 환불
-    creditDeducted = true;
-
     // ── 4. URL 크롤링 또는 수동 텍스트 ──
     let contentText = scrapedText || manualText || '';
 
@@ -216,9 +194,8 @@ export async function POST(req: NextRequest) {
       prompt: `아래 상품 정보를 바탕으로 마케팅 콘텐츠를 생성해줘:\n\n${cleanText}`,
     });
 
-    // ── 7. DB 저장 ──
+    // ── 7. DB 저장 + 크레딧 차감 (save_generation_and_deduct가 원자적으로 처리) ──
     try {
-      // 💡 DB로 보내기 직전 변수 확인
       console.log('DB로 보낼 userId 확인:', userId);
       console.log('DB로 보낼 object 데이터 확인:', JSON.stringify(object).slice(0, 50) + '...');
 
@@ -230,8 +207,10 @@ export async function POST(req: NextRequest) {
       });
 
       if (dbError) {
+        // 크레딧 부족 에러 → 결과는 보여주되 저장 실패 로그만
         console.error('[generate] DB 에러:', dbError);
       } else {
+        creditDeducted = true; // 저장+차감 성공
         console.log('[generate] DB save success! 반환된 데이터:', data);
       }
     } catch (dbErr) {

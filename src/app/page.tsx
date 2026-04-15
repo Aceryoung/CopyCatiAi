@@ -42,6 +42,8 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showLoginSheet, setShowLoginSheet] = useState(false);
   const [showHistorySheet, setShowHistorySheet] = useState(false);
+  const [historyItems, setHistoryItems] = useState<Array<{id: string; source_url: string; created_at: string}>>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const [inputMode, setInputMode] = useState('url');
   const [url, setUrl] = useState('');
@@ -69,7 +71,27 @@ export default function App() {
   }, []);
 
   const isLoggedIn = !!session;
-  const accessToken = session?.access_token ?? "";
+  const accessToken = session?.access_token ?? '';
+
+  // --- [히스토리 불러오기] ---
+  const fetchHistory = async () => {
+    if (!session) return;
+    setHistoryLoading(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('generations')
+        .select('id, source_url, created_at')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (!error && data) setHistoryItems(data);
+    } catch (e) {
+      console.error('history fetch error:', e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   // --- [액션 핸들러] ---
   const addToast = (message: string, type = 'default') => {
@@ -223,7 +245,7 @@ export default function App() {
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowHistorySheet(true)} className="p-2 text-slate-500 hover:text-slate-800 transition-colors">
+            <button onClick={() => { setShowHistorySheet(true); fetchHistory(); }} className="p-2 text-slate-500 hover:text-slate-800 transition-colors">
               <HistoryIcon />
             </button>
             <button onClick={handleLogout} className="px-3 h-9 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors">
@@ -480,7 +502,24 @@ export default function App() {
               <button onClick={() => setShowHistorySheet(false)} className="text-sm text-slate-500 font-medium p-2">닫기</button>
             </div>
             <div className="flex-1 overflow-y-auto flex flex-col gap-3 pb-8">
-              <p className="text-sm text-slate-400 text-center py-8">생성 기록이 없습니다.</p>
+              {historyLoading ? (
+                <div className="flex justify-center py-10">
+                  <div className="animate-spin w-6 h-6 border-2 border-slate-300 border-t-slate-700 rounded-full" />
+                </div>
+              ) : historyItems.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">생성 기록이 없습니다.</p>
+              ) : (
+                historyItems.map(item => (
+                  <div key={item.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1">
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                      {item.source_url === '수동입력' ? '📝 텍스트 직접 입력' : `🔗 ${item.source_url || '상품 URL'}`}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {new Date(item.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </>
