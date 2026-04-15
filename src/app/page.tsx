@@ -50,6 +50,7 @@ export default function App() {
   const [inputMode, setInputMode] = useState('url');
   const [url, setUrl] = useState('');
   const [manualText, setManualText] = useState('');
+  const [blogTone, setBlogTone] = useState<'professional' | 'casual' | 'story'>('professional');
 
   const [status, setStatus] = useState('idle'); // idle | loading | success
   const [activeTab, setActiveTab] = useState('info');
@@ -173,8 +174,8 @@ export default function App() {
         },
         body: JSON.stringify(
           inputMode === 'text'
-            ? { manual_text: manualText }
-            : { source_url: url }
+            ? { manual_text: manualText, blog_tone: blogTone }
+            : { source_url: url, blog_tone: blogTone }
         ),
       });
 
@@ -464,7 +465,29 @@ export default function App() {
 
                 {/* 블로그 섹션 */}
                 <section className="flex flex-col gap-4">
-                  <h2 className="text-lg font-semibold text-slate-800">네이버 블로그 초안</h2>
+                  <div className="flex flex-col gap-3">
+                    <h2 className="text-lg font-semibold text-slate-800">네이버 블로그 초안</h2>
+                    {/* 말투 선택 (3가지) */}
+                    <div className="flex gap-2">
+                      {([
+                        { key: 'professional', label: '🧑‍환 전문가형', desc: 'SEO 최적화' },
+                        { key: 'casual',       label: '😊 구어체', desc: '친근한 말투' },
+                        { key: 'story',        label: '📖 스토리', desc: '상품 경험담' },
+                      ] as { key: 'professional' | 'casual' | 'story'; label: string; desc: string }[]).map(t => (
+                        <button
+                          key={t.key}
+                          onClick={() => setBlogTone(t.key)}
+                          className={`flex-1 flex flex-col items-center py-2 px-1 rounded-xl border text-xs font-medium transition-all
+                            ${blogTone === t.key
+                              ? 'border-blue-600 bg-blue-50 text-blue-700'
+                              : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
+                        >
+                          <span className="text-sm mb-0.5">{t.label}</span>
+                          <span className={`text-[10px] ${blogTone === t.key ? 'text-blue-500' : 'text-slate-400'}`}>{t.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col gap-6">
                     <div className="flex flex-col gap-2">
                       <span className="text-sm font-semibold text-slate-500 bg-slate-100 w-fit px-2 py-1 rounded">추천 제목</span>

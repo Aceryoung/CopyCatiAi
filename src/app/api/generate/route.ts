@@ -98,6 +98,29 @@ export async function POST(req: NextRequest) {
     const sourceUrl: string = body?.source_url ?? '';
     const scrapedText: string | undefined = body?.scraped_text;
     const manualText: string | undefined = body?.manual_text;
+    const blogTone: 'professional' | 'casual' | 'story' = body?.blog_tone ?? 'professional';
+
+    // 말투별 블로그 스타일 지시사항 (네이버 저품질 대비)
+    const toneInstructions: Record<string, string> = {
+      professional: `[블로그 말투: 전문가 정보형]
+- 신뢰감 있는 3인칭 해설체(합니다, 입니다)로 작성한다.
+- SEO를 고려해 핵심 키워드를 자연스럽게 3회 이상 반복 삽입한다.
+- 제목은 상품명 추천 효능 및 사용 후기 형태로 작성한다.
+- 도입부는 해당 카테고리 검색자의 고민으로 시작하고 브랜드 신뢰도를 언급한다.
+- 소제목으로 구조를 나누어 가독성을 높인다.`,
+      casual: `[블로그 말투: 친근한 구어체]
+- 편안하게 읽히는 구어체(해요, 인 것 같아요)로 작성한다.
+- 마치 친한 친구가 솔직하게 추천해주는 듯한 톤을 유지한다.
+- 제목은 공감을 유도하는 질문형 또는 일상 소재로 작성한다.
+- 이모지와 줄바꿈을 활용하되 광고성 문구나 외부 링크는 절대 삽입하지 않는다.
+- 네이버 저품질 필터 회피를 위해 자연스러운 구어체를 유지한다.`,
+      story: `[블로그 말투: 경험담 스토리텔링]
+- 1인칭 화자 말투(처음엔 반신반의했는데, 써보니 오히려)로 작성한다.
+- 구입 전 고민 그리고 사용 경험 그리고 장단점 정리 순서로 구성한다.
+- 솔직한 후기 형식(좋았던 점, 아쉬운 점)으로 균형 잡힌 평가를 담는다.
+- 광고성 문구, 직접 구매 링크, 과도한 제품 찬양은 사용하지 않는다.
+- 독자가 실제 사용자의 이야기를 읽는 느낌이 들도록 자연스럽게 서술한다.`,
+    };
 
     // ── 4. URL 크롤링 또는 수동 텍스트 ──
     let contentText = scrapedText || manualText || '';
@@ -190,7 +213,8 @@ export async function POST(req: NextRequest) {
 [절대 규칙]
 제공된 텍스트 중 배송 안내, 교환/환불 규정, 고객센터 정보, 단순 구매 리뷰는 완전히 무시해.
 오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.
-모든 콘텐츠는 한국어로 작성해.`,
+모든 콘텐츠는 한국어로 작성해.
+${toneInstructions[blogTone]}`,
       prompt: `아래 상품 정보를 바탕으로 마케팅 콘텐츠를 생성해줘:\n\n${cleanText}`,
     });
 
