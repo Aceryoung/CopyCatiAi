@@ -206,16 +206,24 @@ export async function POST(req: NextRequest) {
     console.log('[generate] cleanText 길이:', cleanText.length, 'chars (after body extraction)');
 
     // ── 6. AI 생성 (non-streaming: 안정적 에러 처리) ──
+    const tonePrompt = toneInstructions[blogTone] || toneInstructions["professional"];
+    console.log("[generate] 선택된 블로그 말투:", blogTone);
+
     const { object } = await generateObject({
-      model: openai('gpt-4o-mini'),
+      model: openai("gpt-4o-mini"),
       schema: contentSchema,
       system: `너는 10년 차 베테랑 이커머스 마케팅 전문가이자 카피라이터야.
 [절대 규칙]
 제공된 텍스트 중 배송 안내, 교환/환불 규정, 고객센터 정보, 단순 구매 리뷰는 완전히 무시해.
 오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.
-모든 콘텐츠는 한국어로 작성해.
-${toneInstructions[blogTone]}`,
-      prompt: `아래 상품 정보를 바탕으로 마케팅 콘텐츠를 생성해줘:\n\n${cleanText}`,
+모든 콘텐츠는 한국어로 작성해.`,
+      prompt: `아래 상품 정보를 바탕으로 마케팅 콘텐츠를 생성해줘.
+
+[중요] 블로그 초안(body_markdown) 작성 시 반드시 아래 말투 스타일을 적용해. 이 지시사항을 무시하면 안 돼.
+${tonePrompt}
+
+상품 정보:
+${cleanText}`,
     });
 
     // ── 7. DB 저장 + 크레딧 차감 (save_generation_and_deduct가 원자적으로 처리) ──
