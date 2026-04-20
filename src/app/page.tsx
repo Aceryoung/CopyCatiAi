@@ -43,7 +43,8 @@ export default function App() {
   const [showLoginSheet, setShowLoginSheet] = useState(false);
   const [showHistorySheet, setShowHistorySheet] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
-  const [historyItems, setHistoryItems] = useState<Array<{id: string; source_url: string; created_at: string}>>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [historyItems, setHistoryItems] = useState<Array<{id: string; source_url: string; created_at: string; content_json: any}>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [credits, setCredits] = useState<number | null>(null);
 
@@ -103,7 +104,7 @@ export default function App() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('generations')
-        .select('id, source_url, created_at')
+        .select('id, source_url, created_at, content_json')
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false })
         .limit(20);
@@ -580,14 +581,30 @@ export default function App() {
                 <p className="text-sm text-slate-400 text-center py-8">생성 기록이 없습니다.</p>
               ) : (
                 historyItems.map(item => (
-                  <div key={item.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1">
-                    <p className="text-sm font-medium text-slate-800 truncate">
-                      {item.source_url === '수동입력' ? '📝 텍스트 직접 입력' : `🔗 ${item.source_url || '상품 URL'}`}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {new Date(item.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      if (item.content_json) {
+                        setResult(item.content_json as GenerateResult);
+                        setStatus('success');
+                        setShowHistorySheet(false);
+                        addToast('이전 생성 결과를 불러왔습니다.', 'success');
+                      } else {
+                        addToast('저장된 콘텐츠가 없습니다.', 'error');
+                      }
+                    }}
+                    className="w-full text-left p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 hover:bg-slate-100 active:scale-[0.99] transition-all"
+                  >
+                    <div className="flex-1 min-w-0 flex flex-col gap-1">
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {item.source_url === '수동입력' ? '📝 텍스트 직접 입력' : `🔗 ${item.source_url || '상품 URL'}`}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {new Date(item.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <span className="text-slate-300 text-lg">›</span>
+                  </button>
                 ))
               )}
             </div>
