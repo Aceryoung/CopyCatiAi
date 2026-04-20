@@ -32,7 +32,10 @@ interface GenerateResult {
   };
   blog: {
     title_suggestions: string[];
-    body_markdown: string;
+    professional: string;
+    casual: string;
+    story: string;
+    body_markdown?: string; // 하위 호환 (이전 히스토리)
   };
 }
 
@@ -175,8 +178,8 @@ export default function App() {
         },
         body: JSON.stringify(
           inputMode === 'text'
-            ? { manual_text: manualText, blog_tone: blogTone }
-            : { source_url: url, blog_tone: blogTone }
+            ? { manual_text: manualText }
+            : { source_url: url }
         ),
       });
 
@@ -364,32 +367,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* 블로그 말투 선택 (생성 전 선택) */}
-              <div className="flex flex-col gap-2">
-                <p className="text-sm font-medium text-slate-700">블로그 말투 선택</p>
-                <div className="flex gap-2">
-                  {([
-                    { key: 'professional', label: '🧑‍💼 전문가형', desc: 'SEO 최적화' },
-                    { key: 'casual',       label: '😊 구어체', desc: '친근한 말투' },
-                    { key: 'story',        label: '📖 스토리', desc: '상품 경험담' },
-                  ] as { key: 'professional' | 'casual' | 'story'; label: string; desc: string }[]).map(t => (
-                    <button
-                      key={t.key}
-                      onClick={() => setBlogTone(t.key)}
-                      disabled={status === 'loading'}
-                      className={`flex-1 flex flex-col items-center py-2 px-1 rounded-xl border text-xs font-medium transition-all
-                        ${blogTone === t.key
-                          ? 'border-blue-600 bg-blue-50 text-blue-700'
-                          : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}
-                        disabled:opacity-50`}
-                    >
-                      <span className="text-sm mb-0.5">{t.label}</span>
-                      <span className={`text-[10px] ${blogTone === t.key ? 'text-blue-500' : 'text-slate-400'}`}>{t.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <button
                 onClick={handleGenerate}
                 disabled={status === 'loading'}
@@ -493,6 +470,24 @@ export default function App() {
                 {/* 블로그 섹션 */}
                 <section className="flex flex-col gap-4">
                   <h2 className="text-lg font-semibold text-slate-800">네이버 블로그 초안</h2>
+
+                  {/* 블로그 말투 탭 (인스타처럼 탭 전환) */}
+                  <div className="flex p-1 bg-slate-100 rounded-lg h-12">
+                    {([
+                      { key: 'professional', label: '🧑‍💼 전문가형' },
+                      { key: 'casual',       label: '😊 구어체' },
+                      { key: 'story',        label: '📖 스토리' },
+                    ] as { key: 'professional' | 'casual' | 'story'; label: string }[]).map(t => (
+                      <button
+                        key={t.key}
+                        onClick={() => setBlogTone(t.key)}
+                        className={`flex-1 rounded-md text-sm font-medium transition-all ${blogTone === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col gap-6">
                     <div className="flex flex-col gap-2">
                       <span className="text-sm font-semibold text-slate-500 bg-slate-100 w-fit px-2 py-1 rounded">추천 제목</span>
@@ -502,12 +497,19 @@ export default function App() {
                     </div>
                     <hr className="border-slate-100" />
                     <div className="flex flex-col gap-2">
-                      <span className="text-sm font-semibold text-slate-500 bg-slate-100 w-fit px-2 py-1 rounded">본문 초안</span>
-                      <p className="text-base leading-relaxed text-slate-700 whitespace-pre-wrap">{result.blog.body_markdown}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-500 bg-slate-100 w-fit px-2 py-1 rounded">본문 초안</span>
+                        <span className="text-[11px] font-medium px-2 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+                          {blogTone === 'professional' ? '전문가형 말투' : blogTone === 'casual' ? '친근한 구어체' : '경험담 스토리'}
+                        </span>
+                      </div>
+                      <p className="text-base leading-relaxed text-slate-700 whitespace-pre-wrap">
+                        {result.blog[blogTone] || result.blog.body_markdown || ''}
+                      </p>
                     </div>
                     <div className="flex flex-col gap-2 mt-2">
                       <button
-                        onClick={() => handleCopy(result.blog.body_markdown, 'blog')}
+                        onClick={() => handleCopy(result.blog[blogTone] || result.blog.body_markdown || '', 'blog')}
                         className={`w-full h-11 font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${copiedStates['blog'] ? 'bg-green-600 text-white' : 'bg-slate-900 text-white active:scale-[0.98]'}`}
                       >
                         {copiedStates['blog'] ? <><CheckIcon /> 복사되었습니다</> : <><CopyIcon /> 초안 전체 복사하기</>}

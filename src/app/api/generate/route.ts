@@ -10,28 +10,21 @@ export const maxDuration = 60;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// 말투별 body_markdown 설명을 동적으로 생성하는 스키마 팩토리
-const toneDescriptions: Record<string, string> = {
-  professional: 'SEO에 최적화된 1000자 내외의 네이버 블로그 포스팅 초안. 반드시 3인칭 해설체(합니다, 입니다)로 작성. 전문적이고 신뢰감 있는 톤 유지.',
-  casual: 'SEO에 최적화된 1000자 내외의 네이버 블로그 포스팅 초안. 반드시 친근한 구어체(해요, 인 것 같아요)로 작성. 친구에게 추천하는 듯한 편안한 톤 유지.',
-  story: 'SEO에 최적화된 1000자 내외의 네이버 블로그 포스팅 초안. 반드시 1인칭 경험담 말투(처음엔 반신반의했는데, 써보니 오히려)로 작성. 실제 사용 후기처럼 구성.',
-};
-
-function buildContentSchema(tone: string) {
-  const blogDesc = toneDescriptions[tone] || toneDescriptions['professional'];
-  return z.object({
-    instagram: z.object({
-      info: z.string().describe('카드뉴스용 정보성 문구 (혜택 중심)'),
-      emotional: z.string().describe('스토리텔링 감성형 문구 (라이프스타일 중심)'),
-      sale: z.string().describe('구매 유도 중심의 직설적 판매형 문구 (CTA 포함)'),
-      hashtags: z.array(z.string()).describe('관련 해시태그 15개'),
-    }),
-    blog: z.object({
-      title_suggestions: z.array(z.string()).describe('클릭을 유도하는 블로그 제목 3개'),
-      body_markdown: z.string().describe(blogDesc),
-    }),
-  });
-}
+// 블로그 3종 말투를 한 번에 생성하는 스키마
+const contentSchema = z.object({
+  instagram: z.object({
+    info: z.string().describe('카드뉴스용 정보성 문구 (혜택 중심)'),
+    emotional: z.string().describe('스토리텔링 감성형 문구 (라이프스타일 중심)'),
+    sale: z.string().describe('구매 유도 중심의 직설적 판매형 문구 (CTA 포함)'),
+    hashtags: z.array(z.string()).describe('관련 해시태그 15개'),
+  }),
+  blog: z.object({
+    title_suggestions: z.array(z.string()).describe('클릭을 유도하는 블로그 제목 3개'),
+    professional: z.string().describe('SEO 최적화 1000자 블로그 초안. 3인칭 해설체(합니다, 입니다). 전문적이고 신뢰감 있는 톤.'),
+    casual: z.string().describe('SEO 최적화 1000자 블로그 초안. 친근한 구어체(해요, 인 것 같아요). 친구에게 추천하듯 편안한 톤.'),
+    story: z.string().describe('SEO 최적화 1000자 블로그 초안. 1인칭 경험담(처음엔 반신반의했는데, 써보니 오히려). 실제 후기처럼 구성.'),
+  }),
+});
 
 // ── [이슈 3] Jina 마크다운 네비게이션 스킵 파서 ──
 // Jina가 반환하는 마크다운에서 불필요한 네비게이션(메뉴, 헤더) 부분을 건너뛰고
@@ -108,29 +101,6 @@ export async function POST(req: NextRequest) {
     const sourceUrl: string = body?.source_url ?? '';
     const scrapedText: string | undefined = body?.scraped_text;
     const manualText: string | undefined = body?.manual_text;
-    const blogTone: 'professional' | 'casual' | 'story' = body?.blog_tone ?? 'professional';
-
-    // 말투별 블로그 스타일 지시사항 (네이버 저품질 대비)
-    const toneInstructions: Record<string, string> = {
-      professional: `[블로그 말투: 전문가 정보형]
-- 신뢰감 있는 3인칭 해설체(합니다, 입니다)로 작성한다.
-- SEO를 고려해 핵심 키워드를 자연스럽게 3회 이상 반복 삽입한다.
-- 제목은 상품명 추천 효능 및 사용 후기 형태로 작성한다.
-- 도입부는 해당 카테고리 검색자의 고민으로 시작하고 브랜드 신뢰도를 언급한다.
-- 소제목으로 구조를 나누어 가독성을 높인다.`,
-      casual: `[블로그 말투: 친근한 구어체]
-- 편안하게 읽히는 구어체(해요, 인 것 같아요)로 작성한다.
-- 마치 친한 친구가 솔직하게 추천해주는 듯한 톤을 유지한다.
-- 제목은 공감을 유도하는 질문형 또는 일상 소재로 작성한다.
-- 이모지와 줄바꿈을 활용하되 광고성 문구나 외부 링크는 절대 삽입하지 않는다.
-- 네이버 저품질 필터 회피를 위해 자연스러운 구어체를 유지한다.`,
-      story: `[블로그 말투: 경험담 스토리텔링]
-- 1인칭 화자 말투(처음엔 반신반의했는데, 써보니 오히려)로 작성한다.
-- 구입 전 고민 그리고 사용 경험 그리고 장단점 정리 순서로 구성한다.
-- 솔직한 후기 형식(좋았던 점, 아쉬운 점)으로 균형 잡힌 평가를 담는다.
-- 광고성 문구, 직접 구매 링크, 과도한 제품 찬양은 사용하지 않는다.
-- 독자가 실제 사용자의 이야기를 읽는 느낌이 들도록 자연스럽게 서술한다.`,
-    };
 
     // ── 4. URL 크롤링 또는 수동 텍스트 ──
     let contentText = scrapedText || manualText || '';
@@ -215,23 +185,19 @@ export async function POST(req: NextRequest) {
     const cleanText = extractBodyText(contentText, 3500);
     console.log('[generate] cleanText 길이:', cleanText.length, 'chars (after body extraction)');
 
-    // ── 6. AI 생성 (non-streaming: 안정적 에러 처리) ──
-    const tonePrompt = toneInstructions[blogTone] || toneInstructions["professional"];
-    const dynamicSchema = buildContentSchema(blogTone);
-    console.log("[generate] 선택된 블로그 말투:", blogTone);
+    // ── 6. AI 생성 (블로그 3종 말투 동시 생성) ──
+    console.log("[generate] 블로그 3종 말투 동시 생성 시작");
 
     const { object } = await generateObject({
       model: openai("gpt-4o-mini"),
-      schema: dynamicSchema,
+      schema: contentSchema,
       system: `너는 10년 차 베테랑 이커머스 마케팅 전문가이자 카피라이터야.
 [절대 규칙]
 1. 모든 출력은 반드시 100% 한국어로만 작성해. 영어, 그리스어, 일본어, 중국어 등 다른 언어의 문자는 절대 사용하지 마.
 2. 제공된 텍스트 중 배송 안내, 교환/환불 규정, 고객센터 정보, 단순 구매 리뷰는 완전히 무시해.
-3. 오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.`,
+3. 오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.
+4. 블로그 초안은 3가지 말투(professional, casual, story)로 각각 작성해. 같은 내용을 복사하지 말고 각 말투에 맞게 완전히 다르게 써야 해.`,
       prompt: `아래 상품 정보를 바탕으로 마케팅 콘텐츠를 생성해줘.
-
-[중요] 블로그 초안(body_markdown) 작성 시 반드시 아래 말투 스타일을 적용해. 이 지시사항을 무시하면 안 돼.
-${tonePrompt}
 
 상품 정보:
 ${cleanText}`,
