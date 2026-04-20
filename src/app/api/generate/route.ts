@@ -10,18 +10,28 @@ export const maxDuration = 60;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-const contentSchema = z.object({
-  instagram: z.object({
-    info: z.string().describe('카드뉴스용 정보성 문구 (혜택 중심)'),
-    emotional: z.string().describe('스토리텔링 감성형 문구 (라이프스타일 중심)'),
-    sale: z.string().describe('구매 유도 중심의 직설적 판매형 문구 (CTA 포함)'),
-    hashtags: z.array(z.string()).describe('관련 해시태그 15개'),
-  }),
-  blog: z.object({
-    title_suggestions: z.array(z.string()).describe('클릭을 유도하는 블로그 제목 3개'),
-    body_markdown: z.string().describe('SEO에 최적화된 1000자 내외의 네이버 블로그 포스팅 초안'),
-  }),
-});
+// 말투별 body_markdown 설명을 동적으로 생성하는 스키마 팩토리
+const toneDescriptions: Record<string, string> = {
+  professional: 'SEO에 최적화된 1000자 내외의 네이버 블로그 포스팅 초안. 반드시 3인칭 해설체(합니다, 입니다)로 작성. 전문적이고 신뢰감 있는 톤 유지.',
+  casual: 'SEO에 최적화된 1000자 내외의 네이버 블로그 포스팅 초안. 반드시 친근한 구어체(해요, 인 것 같아요)로 작성. 친구에게 추천하는 듯한 편안한 톤 유지.',
+  story: 'SEO에 최적화된 1000자 내외의 네이버 블로그 포스팅 초안. 반드시 1인칭 경험담 말투(처음엔 반신반의했는데, 써보니 오히려)로 작성. 실제 사용 후기처럼 구성.',
+};
+
+function buildContentSchema(tone: string) {
+  const blogDesc = toneDescriptions[tone] || toneDescriptions['professional'];
+  return z.object({
+    instagram: z.object({
+      info: z.string().describe('카드뉴스용 정보성 문구 (혜택 중심)'),
+      emotional: z.string().describe('스토리텔링 감성형 문구 (라이프스타일 중심)'),
+      sale: z.string().describe('구매 유도 중심의 직설적 판매형 문구 (CTA 포함)'),
+      hashtags: z.array(z.string()).describe('관련 해시태그 15개'),
+    }),
+    blog: z.object({
+      title_suggestions: z.array(z.string()).describe('클릭을 유도하는 블로그 제목 3개'),
+      body_markdown: z.string().describe(blogDesc),
+    }),
+  });
+}
 
 // ── [이슈 3] Jina 마크다운 네비게이션 스킵 파서 ──
 // Jina가 반환하는 마크다운에서 불필요한 네비게이션(메뉴, 헤더) 부분을 건너뛰고
@@ -207,16 +217,17 @@ export async function POST(req: NextRequest) {
 
     // ── 6. AI 생성 (non-streaming: 안정적 에러 처리) ──
     const tonePrompt = toneInstructions[blogTone] || toneInstructions["professional"];
+    const dynamicSchema = buildContentSchema(blogTone);
     console.log("[generate] 선택된 블로그 말투:", blogTone);
 
     const { object } = await generateObject({
       model: openai("gpt-4o-mini"),
-      schema: contentSchema,
+      schema: dynamicSchema,
       system: `너는 10년 차 베테랑 이커머스 마케팅 전문가이자 카피라이터야.
 [절대 규칙]
-제공된 텍스트 중 배송 안내, 교환/환불 규정, 고객센터 정보, 단순 구매 리뷰는 완전히 무시해.
-오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.
-모든 콘텐츠는 한국어로 작성해.`,
+1. 모든 출력은 반드시 100% 한국어로만 작성해. 영어, 그리스어, 일본어, 중국어 등 다른 언어의 문자는 절대 사용하지 마.
+2. 제공된 텍스트 중 배송 안내, 교환/환불 규정, 고객센터 정보, 단순 구매 리뷰는 완전히 무시해.
+3. 오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.`,
       prompt: `아래 상품 정보를 바탕으로 마케팅 콘텐츠를 생성해줘.
 
 [중요] 블로그 초안(body_markdown) 작성 시 반드시 아래 말투 스타일을 적용해. 이 지시사항을 무시하면 안 돼.
