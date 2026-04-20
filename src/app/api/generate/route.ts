@@ -20,9 +20,9 @@ const contentSchema = z.object({
   }),
   blog: z.object({
     title_suggestions: z.array(z.string()).describe('클릭을 유도하는 블로그 제목 3개'),
-    professional: z.string().describe('SEO 최적화 1000자 블로그 초안. 3인칭 해설체(합니다, 입니다). 전문적이고 신뢰감 있는 톤.'),
-    casual: z.string().describe('SEO 최적화 1000자 블로그 초안. 친근한 구어체(해요, 인 것 같아요). 친구에게 추천하듯 편안한 톤.'),
-    story: z.string().describe('SEO 최적화 1000자 블로그 초안. 1인칭 경험담(처음엔 반신반의했는데, 써보니 오히려). 실제 후기처럼 구성.'),
+    professional: z.string().describe('반드시 1500자 이상의 네이버 블로그 초안. 3인칭 해설체(합니다, 입니다). 전문적이고 신뢰감 있는 톤. 소제목 포함.'),
+    casual: z.string().describe('반드시 1500자 이상의 네이버 블로그 초안. 친근한 구어체(해요, 인 것 같아요). 친구에게 추천하듯 편안한 톤. 소제목 포함.'),
+    story: z.string().describe('반드시 1500자 이상의 네이버 블로그 초안. 1인칭 경험담(처음엔 반신반의했는데, 써보니 오히려). 실제 후기처럼 구성. 소제목 포함.'),
   }),
 });
 
@@ -196,7 +196,8 @@ export async function POST(req: NextRequest) {
 1. 모든 출력은 반드시 100% 한국어로만 작성해. 영어, 그리스어, 일본어, 중국어 등 다른 언어의 문자는 절대 사용하지 마.
 2. 제공된 텍스트 중 배송 안내, 교환/환불 규정, 고객센터 정보, 단순 구매 리뷰는 완전히 무시해.
 3. 오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.
-4. 블로그 초안은 3가지 말투(professional, casual, story)로 각각 작성해. 같은 내용을 복사하지 말고 각 말투에 맞게 완전히 다르게 써야 해.`,
+4. 블로그 초안은 3가지 말투(professional, casual, story)로 각각 작성해. 같은 내용을 복사하지 말고 각 말투에 맞게 완전히 다르게 써야 해.
+5. 각 블로그 초안은 반드시 1500자 이상으로 작성해. 절대 짧게 쓰지 마. 소제목(##)을 활용해 구조화하고 내용을 풍부하게 제원해.`,
       prompt: `아래 상품 정보를 바탕으로 마케팅 콘텐츠를 생성해줘.
 
 상품 정보:
@@ -207,6 +208,10 @@ ${cleanText}`,
     try {
       console.log('DB로 보낼 userId 확인:', userId);
       console.log('DB로 보낼 object 데이터 확인:', JSON.stringify(object).slice(0, 50) + '...');
+      console.log('[generate] 블로그 professional 앞 50자:', (object as any).blog?.professional?.slice(0, 50));
+      console.log('[generate] 블로그 casual 앞 50자:', (object as any).blog?.casual?.slice(0, 50));
+      console.log('[generate] 블로그 story 앞 50자:', (object as any).blog?.story?.slice(0, 50));
+      console.log('[generate] blog 전체 키:', Object.keys((object as any).blog || {}));
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error: dbError } = await (supabase as any).rpc('save_generation_and_deduct', {
