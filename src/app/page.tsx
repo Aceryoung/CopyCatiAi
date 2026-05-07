@@ -141,14 +141,13 @@ export default function App() {
     if (!session) return;
     setHistoryLoading(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
-        .from('generations')
-        .select('id, source_url, created_at, content_json')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      if (!error && data) setHistoryItems(data);
+      const res = await fetch('/api/history');
+      if (!res.ok) {
+        console.error('history fetch failed:', await res.text());
+        return;
+      }
+      const data = await res.json();
+      setHistoryItems(data.history ?? []);
     } catch (e) {
       console.error('history fetch error:', e);
     } finally {
