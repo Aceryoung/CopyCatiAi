@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { PricingModal } from './components/PricingModal';
 import { ClassifySection } from './components/ClassifySection';
 import { DisclaimerModal } from './components/DisclaimerModal';
+import { marked } from 'marked';
 
 
 // --- [아이콘 컴포넌트] ---
@@ -373,15 +374,37 @@ export default function App() {
     return '';
   };
 
-  const handleCopy = async (text: string, platform: string) => {
+  const handleCopy = async (rawText: string, platform: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      // 1. 마크다운(**, ### 등)을 HTML로 변환 — 블로그 에디터 호환
+      const htmlContent = await marked.parse(rawText);
+
+      // 2. ClipboardItem으로 서식 + 평어택스트 동시 등록
+      const clipboardItem = new ClipboardItem({
+        'text/html': new Blob([htmlContent], { type: 'text/html' }),
+        'text/plain': new Blob([rawText], { type: 'text/plain' }),
+      });
+
+      // 3. 최신 API로 서식 복사
+      await navigator.clipboard.write([clipboardItem]);
+
+      // 4. 성공 UI
       setCopiedStates({ ...copiedStates, [platform]: true });
-      addToast('텍스트가 복사되었습니다.', 'success');
+      addToast('블로그 서식이 적용된 상태로 복사되었습니다!', 'success');
       setShowDeepLink(platform);
       setTimeout(() => setCopiedStates(prev => ({ ...prev, [platform]: false })), 2000);
+
     } catch {
-      addToast('복사에 실패했습니다. 브라우저 권한을 확인해주세요.', 'error');
+      // Fallback: 구형 브라우저(ClipboardItem 미지원) 대비
+      try {
+        await navigator.clipboard.writeText(rawText);
+        setCopiedStates({ ...copiedStates, [platform]: true });
+        addToast('기본 텍스트로 복사되었습니다.', 'success');
+        setShowDeepLink(platform);
+        setTimeout(() => setCopiedStates(prev => ({ ...prev, [platform]: false })), 2000);
+      } catch {
+        addToast('복사에 실패했습니다. 브라우저 권한을 확인해주세요.', 'error');
+      }
     }
   };
 
