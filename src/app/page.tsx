@@ -7,6 +7,7 @@ import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { PricingModal } from './components/PricingModal';
 import { ClassifySection } from './components/ClassifySection';
+import { DisclaimerModal } from './components/DisclaimerModal';
 
 
 // --- [아이콘 컴포넌트] ---
@@ -90,7 +91,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('info');
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
   const [showDeepLink, setShowDeepLink] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: string }>>([]);
+  const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: string }>>([])
+
+  // --- [완전체 생성 상태] ---
+  const [userReview, setUserReview] = useState('');
+  const [fullBlogContent, setFullBlogContent] = useState('');
+  const [fullBlogStatus, setFullBlogStatus] = useState<'idle' | 'loading' | 'streaming' | 'success'>('idle');
+  const [isDisclaimerOpen, setIsDisclaimerOpen] = useState(false);;
 
   // --- [실제 API 결과 데이터] ---
   const [result, setResult] = useState<GenerateResult | null>(null);
@@ -244,8 +251,8 @@ export default function App() {
         },
         body: JSON.stringify(
           inputMode === 'text'
-            ? { manual_text: manualText }
-            : { source_url: url }
+            ? { manual_text: manualText, userReview }
+            : { source_url: url, userReview }
         ),
       });
 
@@ -282,6 +289,69 @@ export default function App() {
     } catch {
       addToast("네트워크 오류가 발생했습니다.", "error");
       setStatus('idle');
+    }
+  };
+
+  // --- [완전체 블로그 스트리밍 핸들러] ---
+  const DISCLAIMER = '❗[주의: 이 부분은 대표님의 실제 스토어 링크와 사용 후기로 한 줄만 수정해 주세요]\n\n';
+
+  const handleFullGenerate = async () => {
+    if (inputMode === 'url' && !url.trim()) return addToast('상품 URL을 입력해 주세요.', 'error');
+    if (inputMode === 'text' && manualText.trim().length < 10) return addToast('상품 설명을 10자 이상 입력해 주세요.', 'error');
+
+    setFullBlogStatus('loading');
+    setFullBlogContent(DISCLAIMER + '✍️ AI가 완전체 블로그를 작성하고 있습니다...');
+
+    try {
+      const res = await fetch('/api/generate-full', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          inputMode === 'text'
+            ? { manual_text: manualText, userReview }
+            : { source_url: url, userReview }
+        ),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const errCode = data?.error ?? '';
+        if (errCode.includes('INSUFFICIENT_CREDITS')) {
+          addToast('크레딧이 부족합니다.', 'error');
+          setShowPricingModal(true);
+        } else {
+          addToast(errCode.replace(/^[A-Z_]+: /, '') || '완전체 생성 중 오류가 발생했습니다.', 'error');
+        }
+        setFullBlogStatus('idle');
+        setFullBlogContent('');
+        return;
+      }
+
+      // 스트리밍 읽기
+      setFullBlogStatus('streaming');
+      setFullBlogContent(DISCLAIMER);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += decoder.decode(value, { stream: true });
+        setFullBlogContent(DISCLAIMER + accumulated);
+      }
+
+      // 완료: 뒤에도 Disclaimer 붙이기
+      const finalContent = DISCLAIMER + accumulated + '\n\n' + DISCLAIMER;
+      setFullBlogContent(finalContent);
+      setFullBlogStatus('success');
+      addToast('완전체 블로그가 생성되었습니다! 🎉', 'success');
+      if (session?.user?.id) fetchCredits(session.user.id);
+
+    } catch {
+      addToast('네트워크 오류가 발생했습니다.', 'error');
+      setFullBlogStatus('idle');
+      setFullBlogContent('');
     }
   };
 
@@ -701,6 +771,72 @@ export default function App() {
                         </a>
                       )}
                     </div>
+
+                    {/* ── 완전체 생성 옵션 ── */}
+                    <div className="mt-4 flex flex-col gap-3 p-4 bg-slate-900 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">⚡</span>
+                        <div>
+                          <p className="text-sm font-bold text-white">완전체 블로그 만들기</p>
+                          <p className="text-xs text-slate-400">1,500자+ 스트리밍 생성 · 크레딧 1개</p>
+                        </div>
+                      </div>
+
+                      {/* 유저 경험담 입력 (선택) */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-slate-400">
+                          ✍️ 나만의 경험담 (선택)—입력 시 AI가 본문에 자연스러운게 녹여냅니다
+                        </label>
+                        <textarea
+                          value={userReview}
+                          onChange={(e) => setUserReview(e.target.value)}
+                          placeholder="예) 생각보다 혼자서도 쉽게 조립되었고, 디자인이 너무 예븁었어요."
+                          rows={2}
+                          className="w-full text-sm text-white bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 placeholder-slate-500 resize-none focus:outline-none focus:border-slate-500"
+                        />
+                      </div>
+
+                      {/* 완전체 생성 버튼 */}
+                      <button
+                        onClick={() => setIsDisclaimerOpen(true)}
+                        disabled={fullBlogStatus === 'loading' || fullBlogStatus === 'streaming'}
+                        className="w-full h-12 bg-amber-400 text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {fullBlogStatus === 'loading' || fullBlogStatus === 'streaming' ? (
+                          <><div className="animate-spin w-4 h-4 border-2 border-slate-900/30 border-t-slate-900 rounded-full" /> {fullBlogStatus === 'streaming' ? '작성 중...' : '준비 중...'}</>
+                        ) : (
+                          <>⚡ 완전체 블로그 생성하기 (1,500자+)</>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* 완전체 스트리밍 결과 */}
+                    {(fullBlogStatus === 'streaming' || fullBlogStatus === 'success') && fullBlogContent && (
+                      <div className="flex flex-col gap-3 p-4 bg-white border-2 border-amber-300 rounded-xl">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-amber-700">⚡ 완전체 블로그 초안</span>
+                          {fullBlogStatus === 'streaming' && (
+                            <span className="text-xs text-slate-400 animate-pulse">생성 중…</span>
+                          )}
+                          {fullBlogStatus === 'success' && (
+                            <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✅ 완료</span>
+                          )}
+                        </div>
+                        <div className="text-sm leading-relaxed text-slate-700 whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                          {renderHighlightedText(fullBlogContent)}
+                        </div>
+                        {fullBlogStatus === 'success' && (
+                          <button
+                            onClick={() => handleCopy(fullBlogContent, 'fullBlog')}
+                            className={`w-full h-11 font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${
+                              copiedStates['fullBlog'] ? 'bg-green-600 text-white' : 'bg-amber-400 text-slate-900'
+                            }`}
+                          >
+                            {copiedStates['fullBlog'] ? <><CheckIcon /> 복사되었습니다</> : <><CopyIcon /> 완전체 전체 복사하기</>}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </section>
 
@@ -734,6 +870,13 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Disclaimer Modal */}
+      <DisclaimerModal
+        isOpen={isDisclaimerOpen}
+        onClose={() => setIsDisclaimerOpen(false)}
+        onConfirm={handleFullGenerate}
+      />
 
       {/* Pricing Modal (portal-root에 렌더 — 390px 바깥) */}
       <PricingModal

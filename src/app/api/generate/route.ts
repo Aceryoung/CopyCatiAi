@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
     const sourceUrl: string = body?.source_url ?? '';
     const scrapedText: string | undefined = body?.scraped_text;
     const manualText: string | undefined = body?.manual_text;
+    const userReview: string = body?.userReview ?? '';  // 유저 경험담 (선택)
 
     // ── 4. URL 크롤링 또는 수동 텍스트 ──
     let contentText = scrapedText || manualText || '';
@@ -210,7 +211,7 @@ export async function POST(req: NextRequest) {
 - [ 📷 제품의 질감이 잘 보이는 확대 사진을 첨부해 주세요 ]
 이 규칙은 professional, casual, story 세 가지 버전 모두에 동일하게 적용됩니다.`,
       prompt: `주제:
-${cleanText}`,
+${cleanText}${userReview.trim().length > 0 ? `\n\n[유저 실제 경험담 — 반드시 본문에 자연스럽게 포함]\n${userReview}` : ''}`,
     });
 
     // ── 7. DB 저장 + 크레딧 차감 (save_generation_and_deduct가 원자적으로 처리) ──
