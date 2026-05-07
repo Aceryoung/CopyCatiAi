@@ -147,7 +147,7 @@ export default function App() {
         return;
       }
       const data = await res.json();
-      setHistoryItems(data.history ?? []);
+      setHistoryItems(Array.isArray(data?.history) ? data.history : []);
     } catch (e) {
       console.error('history fetch error:', e);
     } finally {
@@ -936,10 +936,20 @@ export default function App() {
                     key={item.id}
                     onClick={() => {
                       if (item.content_json) {
-                        setResult(item.content_json as GenerateResult);
-                        setStatus('success');
-                        setShowHistorySheet(false);
-                        addToast('이전 생성 결과를 불러왔습니다.', 'success');
+                        try {
+                          const parsedContent = typeof item.content_json === 'string' 
+                            ? JSON.parse(item.content_json) 
+                            : item.content_json;
+                          
+                          setResult(parsedContent as GenerateResult);
+                          setFullBlogContent(parsedContent.full_blog || '');
+                          setStatus('success');
+                          setShowHistorySheet(false);
+                          addToast('이전 생성 결과를 불러왔습니다.', 'success');
+                        } catch (e) {
+                          console.error("Failed to parse content_json", e);
+                          addToast('콘텐츠를 불러오는 중 오류가 발생했습니다.', 'error');
+                        }
                       } else {
                         addToast('저장된 콘텐츠가 없습니다.', 'error');
                       }
@@ -954,12 +964,12 @@ export default function App() {
                         {(() => {
                           try {
                             if (!item.created_at) return '';
-                            const safeDate = item.created_at.replace(' ', 'T');
+                            const safeDate = typeof item.created_at === 'string' ? item.created_at.replace(' ', 'T') : item.created_at;
                             const d = new Date(safeDate);
-                            if (isNaN(d.getTime())) return item.created_at;
+                            if (isNaN(d.getTime())) return String(item.created_at);
                             return d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                           } catch (e) {
-                            return item.created_at || '';
+                            return String(item.created_at) || '';
                           }
                         })()}
                       </p>
