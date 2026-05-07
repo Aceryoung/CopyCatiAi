@@ -701,6 +701,8 @@ export default function App() {
                 <section className="flex flex-col gap-4">
                   <h2 className="text-lg font-semibold text-slate-800">네이버 블로그 초안</h2>
 
+                  {/* 모바일 뷰어 래퍼 — PC에서도 스마트폰 비율로 미리보기 */}
+                  <div className="w-full max-w-[480px] mx-auto flex flex-col gap-4">
                   {/* 블로그 말투 탭 (인스타처럼 탭 전환) */}
                   <div className="flex p-1 bg-slate-100 rounded-lg h-12">
                     {([
@@ -769,7 +771,7 @@ export default function App() {
                           {blogTone === 'professional' ? '전문가형 말투' : blogTone === 'casual' ? '친근한 구어체' : '경험담 스토리'}
                         </span>
                       </div>
-                      <div className="text-base leading-relaxed text-slate-700 whitespace-pre-wrap">
+                      <div className="text-base md:text-lg leading-loose text-slate-700 whitespace-pre-wrap">
                         {renderHighlightedText(result.blog[blogTone] || result.blog.body_markdown || '')}
                       </div>
                       {/* 넛지 안내 */}
@@ -844,7 +846,7 @@ export default function App() {
                             <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✅ 완료</span>
                           )}
                         </div>
-                        <div className="text-sm leading-relaxed text-slate-700 whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                        <div className="text-sm md:text-base leading-loose text-slate-700 whitespace-pre-wrap max-h-[400px] overflow-y-auto">
                           {renderHighlightedText(fullBlogContent)}
                         </div>
                         {fullBlogStatus === 'success' && (
@@ -860,6 +862,7 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                  </div>{/* /모바일 뷰어 래퍼 */}
                 </section>
 
                 {/* 면책 고지 */}
