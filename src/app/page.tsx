@@ -951,7 +951,17 @@ export default function App() {
                         {item.source_url === '수동입력' ? '📝 텍스트 직접 입력' : `🔗 ${item.source_url || '상품 URL'}`}
                       </p>
                       <p className="text-xs text-slate-400">
-                        {new Date(item.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {(() => {
+                          try {
+                            if (!item.created_at) return '';
+                            const safeDate = item.created_at.replace(' ', 'T');
+                            const d = new Date(safeDate);
+                            if (isNaN(d.getTime())) return item.created_at;
+                            return d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                          } catch (e) {
+                            return item.created_at || '';
+                          }
+                        })()}
                       </p>
                     </div>
                     <span className="text-slate-300 text-lg">›</span>
