@@ -19,6 +19,25 @@ const ClipboardIcon = () => <svg className="size-3.5" fill="none" stroke="curren
 const ExternalLinkIcon = () => <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>;
 const RefreshIcon = () => <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
 
+// --- [저품질 방지 넛지 UI] 대괄호 영역 형광펜 하이라이터 ---
+const renderHighlightedText = (text: string): React.ReactNode => {
+  if (!text) return null;
+  const parts = text.split(/(\[.*?\])/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('[') && part.endsWith(']')) {
+      return (
+        <span
+          key={index}
+          className="inline-block bg-yellow-200 text-yellow-900 font-bold px-1.5 py-0.5 rounded mx-0.5 text-sm leading-relaxed"
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
 interface GenerateResult {
   instagram: {
     info: string;
@@ -429,7 +448,7 @@ export default function App() {
                   {status === 'loading' ? (
                     <><div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> 생성 중...</>
                   ) : (
-                    <><SparklesIcon /> 카피 생성하기</>
+                    <><SparklesIcon /> SEO 최적화 블로그 초안 생성 ⚡</>
                   )}
                 </button>
               )}
@@ -658,9 +677,16 @@ export default function App() {
                           {blogTone === 'professional' ? '전문가형 말투' : blogTone === 'casual' ? '친근한 구어체' : '경험담 스토리'}
                         </span>
                       </div>
-                      <p className="text-base leading-relaxed text-slate-700 whitespace-pre-wrap">
-                        {result.blog[blogTone] || result.blog.body_markdown || ''}
-                      </p>
+                      <div className="text-base leading-relaxed text-slate-700 whitespace-pre-wrap">
+                        {renderHighlightedText(result.blog[blogTone] || result.blog.body_markdown || '')}
+                      </div>
+                      {/* 넛지 안내 */}
+                      <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg mt-1">
+                        <span className="text-base">💡</span>
+                        <p className="text-xs text-yellow-800 leading-relaxed">
+                          <strong>노란색 영역</strong>에 실제 사진과 나만의 경험을 채워주세요. 유사 문서 감지를 피해 블로그 검색 노출이 높아집니다.
+                        </p>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-2 mt-2">
                       <button
