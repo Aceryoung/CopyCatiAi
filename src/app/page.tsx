@@ -138,7 +138,12 @@ export default function App() {
 
   const handleGoogleLogin = async () => {
     setShowLoginSheet(false);
-    await supabase.auth.signInWithOAuth({ provider: "google" });
+    // redirectTo: 현재 환경(로컬/Vercel)의 실제 URL을 자동으로 사용
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo },
+    });
   };
 
   const handleLogout = async () => {
