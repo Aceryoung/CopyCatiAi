@@ -1,11 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Pro 플랜: 60초, Hobby: 10초로 낮추세요
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /* ─────────────────────────────────────────
    유틸: HTML → 순수 텍스트 추출
@@ -116,20 +114,11 @@ async function crawlWithDirectFetch(url: string, timeoutMs = 10000): Promise<str
 export async function POST(req: NextRequest) {
   try {
     // ── 1. Auth ──
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
-    }
-    const accessToken = authHeader.slice(7);
-
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-    });
-
+    const supabase = await createClient();
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser(accessToken);
+    } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });

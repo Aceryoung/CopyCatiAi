@@ -11,7 +11,24 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "CopyCat AI - 마케팅 콘텐츠 자동 생성",
   description:
-    "URL 하나로 인스타그램 & 블로그 마케팅 카피를 자동으로 생성합니다.",
+    "URL 하나로 인스타그램 & 네이버/구글 블로그 마케팅 카피를 자동으로 생성합니다. 타겟팅된 SEO 메타 태그와 키워드까지 완벽하게 추출해 보세요.",
+  keywords: ["AI 마케팅", "인스타그램 해시태그", "네이버 블로그 키워드", "SEO 최적화", "콘텐츠 자동 생성", "상세페이지 크롤링", "CopyCat AI"],
+  openGraph: {
+    title: "CopyCat AI - 1초 만에 끝나는 마케팅 마법",
+    description: "URL 하나로 인스타그램 & 블로그 마케팅 카피를 자동으로 생성합니다.",
+    url: "https://copycat-ai.test",
+    siteName: "CopyCat AI",
+    locale: "ko_KR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CopyCat AI - 마케팅 콘텐츠 자동 생성",
+    description: "URL 하나로 인스타그램 & 블로그 마케팅 카피를 자동 생성합니다.",
+  },
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export const viewport: Viewport = {

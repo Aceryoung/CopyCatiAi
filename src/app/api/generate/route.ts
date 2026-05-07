@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { z } from 'zod';
@@ -7,8 +7,6 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 // 블로그 3종 말투를 한 번에 생성하는 스키마
 const contentSchema = z.object({
@@ -19,10 +17,15 @@ const contentSchema = z.object({
     hashtags: z.array(z.string()).describe('관련 해시태그 15개'),
   }),
   blog: z.object({
+    seo: z.object({
+      meta_title: z.string().describe('SEO 최적화된 메인 타겟 키워드 포함 메타 타이틀 (공백 포함 40~50자)'),
+      meta_description: z.string().describe('네이버/구글 등에서 검색 시 노출될 매력적인 소개글 (공백 포함 100~140자)'),
+      keywords: z.array(z.string()).describe('블로그 포털 통합 검색(네이버, 티스토리, 구글 등) 최상위 노출을 위한 핵심 타겟 키워드 5개'),
+    }),
     title_suggestions: z.array(z.string()).describe('클릭을 유도하는 블로그 제목 3개'),
-    professional: z.string().describe('반드시 1500자 이상의 네이버 블로그 초안. 3인칭 해설체(합니다, 입니다). 전문적이고 신뢰감 있는 톤. 소제목 포함.'),
-    casual: z.string().describe('반드시 1500자 이상의 네이버 블로그 초안. 친근한 구어체(해요, 인 것 같아요). 친구에게 추천하듯 편안한 톤. 소제목 포함.'),
-    story: z.string().describe('반드시 1500자 이상의 네이버 블로그 초안. 1인칭 경험담(처음엔 반신반의했는데, 써보니 오히려). 실제 후기처럼 구성. 소제목 포함.'),
+    professional: z.string().describe('1500자 이상의 매우 상세한 네이버/티스토리 블로그 초안. 3인칭 전문가 리뷰어 톤(합니다, 입니다). 내용을 깊이 있게 다루는 소제목 4개 이상 포함.'),
+    casual: z.string().describe('1500자 이상의 매우 상세한 네이버/티스토리 블로그 초안. 친근하고 트렌디한 구어체 톤(해요, 인 것 같아요). 꿀팁을 전수하듯 편안한 스타일. 소제목 4개 이상 포함.'),
+    story: z.string().describe('1500자 이상의 매우 상세한 네이버/티스토리 블로그 초안. 1인칭 경험담 톤(처음엔 반신반의했는데, 써보니). 흡입력 있게 실제 후기처럼 서술. 소제목 4개 이상 포함.'),
   }),
 });
 
@@ -70,25 +73,15 @@ function extractBodyText(markdown: string, maxLen = 3500): string {
 export async function POST(req: NextRequest) {
   // ── 이슈 1·2를 위해 크레딧 선차감 여부 추적 ──
   let creditDeducted = false;
-  let supabase: ReturnType<typeof createClient> | null = null;
+  const supabase = await createClient();
   let userId: string | null = null;
 
   try {
     // ── 1. Auth ──
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
-    }
-    const accessToken = authHeader.slice(7);
-
-    supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-    });
-
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser(accessToken);
+    } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
@@ -191,27 +184,23 @@ export async function POST(req: NextRequest) {
     const { object } = await generateObject({
       model: openai("gpt-4o-mini"),
       schema: contentSchema,
-      system: `너는 10년 차 전문 리뷰/정보 블로거야. 독자와 대화하듯 친근하고 신뢰감 있는 말투를 사용해 줘.
+      system: `당신은 10년 차 탑티어 마케터이자 전문 리뷰/정보 블로거입니다. 독자와 대화하듯 친밀하고 신뢰감 있는 톤을 유지해야 합니다.
+제공된 [입력 데이터/URL 콘텐츠]를 바탕으로, 단순 스펙 나열은 배제하고 고객의 페인포인트(Pain Point)를 해결해주는 매력적인 글을 작성하세요.
 
 [절대 규칙]
-1. 모든 출력은 반드시 100% 한국어로만 작성해. 영어, 그리스어, 일본어, 중국어 등 다른 언어의 문자는 절대 사용하지 마.
-2. 제공된 텍스트 중 배송 안내, 교환/환불 규정, 고객센터 정보, 단순 구매 리뷰는 완전히 무시해.
-3. 오직 상품의 매력, 스펙, 기능 등 마케팅 소구점(USP)에만 집중해서 카피를 작성해.
-4. 블로그 초안은 3가지 말투(professional, casual, story)로 각각 작성해. 같은 내용을 복사하지 말고 각 말투에 맞게 완전히 다르게 써야 해.
-5. 각 블로그 초안은 반드시 1500자 이상으로 작성해. 절대 짧게 쓰지 마. 소제목(##)을 활용해 구조화하고 내용을 풍부하게 작성해.
+1. 100% 자연스러운 한국어로만 작성하세요. (기계 번역 어투 절대 금지)
+2. 배송 안내, 교환/환불 규정, 단순 고객센터 안내 등 마케팅 본질과 무관한 내용은 완전히 제외하세요.
+3. 제품/서비스의 핵심 매력, 차별화 포인트, 고객이 얻는 실질적 혜택(USP)에만 집중하세요.
+4. "매력적인 도입부", "본문", "확실한 마무리"와 같은 지시어 자체를 절대로 텍스트나 제목으로 출력하지 마세요. 대신 해당 기능에 맞는, 사람을 훅(Hook)하게 만드는 진짜 소제목(H2/H3)을 창작해 사용하세요.
+5. 블로그 초안은 지시된 3가지 페르소나(Professional, Casual, Story)에 맞추어 각각 다른 서사 구조와 전개 방식으로 완전히 새롭게 작성해야 합니다.
+6. 한 문단은 최대 3~4문장을 넘지 않게 짧게 끊어 쓰되, 전체 분량이 매우 상세하고 풍성해지도록(최소 1500자 이상) 문단의 개수를 충분히 많이 작성하세요. 중요한 단어에는 볼드체(**강조**)를 적용하고 내용에 맞는 이모지도 적절히 배치하세요.
+7. 네이버 블로그, 티스토리, 워드프레스 등 주요 검색 포털 노출(SEO)을 극대화할 수 있도록 제목과 본문에 핵심 타겟 키워드를 자연스럽게 녹여내고, 최적의 SEO 추천 정보(SEO 메타 타이틀, 디스크립션, 추천 키워드 태그)를 함께 도출하세요.
 
-[포스팅 형식]
-다음 포스팅 형식을 각 말투별 블로그 초안 작성 시 엄격히 지켜서 작성해 줘.
-
-1. 매력적인 도입부: 독자의 고민에 공감하며 시작하고, 이 글을 읽으면 어떤 문제를 해결할 수 있는지 기대감을 줄 것.
-2. 본문 (소제목 2~3개): 직관적인 소제목을 나누어 작성할 것. 가독성을 위해 불릿 포인트(•)나 리스트를 적절히 활용할 것.
-3. 가독성 규칙: 한 문단은 절대 3문장을 넘지 않게 짧게 끊어 쓸 것. 중요한 단어는 볼드체 처리할 것. 내용에 맞는 이모지를 적절히 섞을 것.
-4. 확실한 마무리: 본문 핵심 내용을 2줄로 요약하고, "공감과 댓글을 남겨주세요"라는 콜투액션(CTA)으로 마무리할 것.
-
-명심해. 각 말투(전문가형, 구어체, 스토리)의 고유한 컨셉은 살리되, 위 포스팅 형식과 가독성 규칙은 모두 공통으로 적용해야 해.`,
-      prompt: `다음 [주제]에 대해 블로그 글 및 마케팅 콘텐츠를 생성해 줘.
-
-주제(상품 정보):
+[블로그 구성 필수 가이드라인]
+* 도입부 (Intro): 독자의 일상적인 고민이나 불편함에 공감하며 시작하고, 이 글이 어떤 해결책을 줄 수 있는지 부드럽게 제시하세요.
+* 본문 (Body): 직관적이고 검색 엔진이 좋아할 만한 소제목 4~5개 이상을 사용하여 상품의 가치를 아주 깊이 있고 상세하게 다루세요. 가독성을 위해 불릿 포인트(•)나 넘버링을 강력히 활용하세요.
+* 마무리 (Outro): 본문의 핵심을 2~3줄로 명료하게 요약하고, 독자의 공감을 이끌어내거나 행동을 유도(CTA)하며 자연스럽게 끝맺음하세요.`,
+      prompt: `주제:
 ${cleanText}`,
     });
 

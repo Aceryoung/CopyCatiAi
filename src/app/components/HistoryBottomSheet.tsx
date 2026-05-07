@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { createClient } from "@/lib/supabase/client";
 
 interface HistoryItem {
   id: string;
@@ -28,6 +23,7 @@ export default function HistoryBottomSheet({
   accessToken,
   onSelectItem,
 }: HistoryBottomSheetProps) {
+  const supabase = createClient();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -37,17 +33,7 @@ export default function HistoryBottomSheet({
     const fetchHistory = async () => {
       setLoading(true);
       try {
-        const authedClient = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          {
-            global: {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            },
-          }
-        );
-
-        const { data, error } = await authedClient
+        const { data, error } = await supabase
           .from("generations")
           .select("id, source_url, content_json, created_at")
           .order("created_at", { ascending: false })

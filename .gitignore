@@ -38,3 +38,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# external tools (not part of source)
+/AI_Provider_Usage_monitor_for_mac/

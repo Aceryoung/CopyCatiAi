@@ -3,14 +3,11 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { createClient, Session } from "@supabase/supabase-js";
+import type { Session } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 import { PricingModal } from './components/PricingModal';
+import { ClassifySection } from './components/ClassifySection';
 
-/* ── Supabase Client ── */
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 // --- [아이콘 컴포넌트] ---
 const GoogleIcon = () => <svg className="size-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" /><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" /></svg>;
@@ -22,7 +19,6 @@ const ClipboardIcon = () => <svg className="size-3.5" fill="none" stroke="curren
 const ExternalLinkIcon = () => <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>;
 const RefreshIcon = () => <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
 
-// --- [결과 타입] (백엔드 스키마와 일치) ---
 interface GenerateResult {
   instagram: {
     info: string;
@@ -31,6 +27,11 @@ interface GenerateResult {
     hashtags: string[];
   };
   blog: {
+    seo?: {
+      meta_title: string;
+      meta_description: string;
+      keywords: string[];
+    };
     title_suggestions: string[];
     professional: string;
     casual: string;
@@ -40,6 +41,7 @@ interface GenerateResult {
 }
 
 export default function App() {
+  const supabase = createClient();
   // --- [Supabase Auth 상태] ---
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -55,6 +57,15 @@ export default function App() {
   const [url, setUrl] = useState('');
   const [manualText, setManualText] = useState('');
   const [blogTone, setBlogTone] = useState<'professional' | 'casual' | 'story'>('professional');
+
+  // --- [블로그 초안 분류 기능] ---
+  const [classifyText, setClassifyText] = useState('');
+  const [classifyStatus, setClassifyStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+  const [classifyResult, setClassifyResult] = useState<{
+    headline: string;
+    structure: string;
+    bodyText: string;
+  } | null>(null);
 
   const [status, setStatus] = useState('idle'); // idle | loading | success
   const [activeTab, setActiveTab] = useState('info');
@@ -78,7 +89,6 @@ export default function App() {
   }, []);
 
   const isLoggedIn = !!session;
-  const accessToken = session?.access_token ?? '';
 
   // --- [크레딧 조회] ---
   const fetchCredits = async (userId: string) => {
@@ -160,6 +170,39 @@ export default function App() {
     }
   };
 
+  // --- [블로그 초안 분류 핸들러] ---
+  const handleClassify = async () => {
+    if (classifyText.trim().length < 20) {
+      return addToast('분류할 텍스트를 20자 이상 입력해 주세요.', 'error');
+    }
+    setClassifyStatus('loading');
+    setClassifyResult(null);
+    try {
+      const res = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_text: classifyText }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const errCode = data?.error ?? 'INTERNAL_ERROR';
+        if (errCode.includes('UNAUTHORIZED')) {
+          addToast('로그인 후 이용해 주세요.', 'error');
+        } else {
+          addToast('분류 중 오류가 발생했습니다.', 'error');
+        }
+        setClassifyStatus('idle');
+        return;
+      }
+      setClassifyResult(data.result);
+      setClassifyStatus('success');
+      addToast('초안 분류가 완료되었습니다!', 'success');
+    } catch {
+      addToast('네트워크 오류가 발생했습니다.', 'error');
+      setClassifyStatus('idle');
+    }
+  };
+
   // --- [실제 /api/generate 연동] ---
   const handleGenerate = async () => {
     if (inputMode === 'url' && !url.trim()) return addToast("상품 URL을 입력해 주세요.", "error");
@@ -174,7 +217,6 @@ export default function App() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify(
           inputMode === 'text'
@@ -316,15 +358,21 @@ export default function App() {
               <div className="flex p-1 bg-slate-100 rounded-lg h-12">
                 <button
                   onClick={() => setInputMode('url')}
-                  className={`flex-1 rounded-md text-sm font-medium transition-all ${inputMode === 'url' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                  className={`flex-1 rounded-md text-xs font-medium transition-all ${inputMode === 'url' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
                 >
                   링크로 입력
                 </button>
                 <button
                   onClick={() => setInputMode('text')}
-                  className={`flex-1 rounded-md text-sm font-medium transition-all ${inputMode === 'text' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                  className={`flex-1 rounded-md text-xs font-medium transition-all ${inputMode === 'text' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
                 >
-                  텍스트 직접 입력
+                  텍스트 입력
+                </button>
+                <button
+                  onClick={() => setInputMode('classify')}
+                  className={`flex-1 rounded-md text-xs font-medium transition-all ${inputMode === 'classify' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                >
+                  초안 분류
                 </button>
               </div>
 
@@ -367,18 +415,84 @@ export default function App() {
                 </div>
               )}
 
-              <button
-                onClick={handleGenerate}
-                disabled={status === 'loading'}
-                className="w-full h-12 flex items-center justify-center gap-2 mt-1 rounded-md font-medium bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-400 active:scale-[0.98] transition-all"
-              >
-                {status === 'loading' ? (
-                  <><div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> 생성 중...</>
-                ) : (
-                  <><SparklesIcon /> 카피 생성하기</>
-                )}
-              </button>
+              {inputMode !== 'classify' && (
+                <button
+                  onClick={handleGenerate}
+                  disabled={status === 'loading'}
+                  className="w-full h-12 flex items-center justify-center gap-2 mt-1 rounded-md font-medium bg-slate-900 text-white disabled:bg-slate-200 disabled:text-slate-400 active:scale-[0.98] transition-all"
+                >
+                  {status === 'loading' ? (
+                    <><div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> 생성 중...</>
+                  ) : (
+                    <><SparklesIcon /> 카피 생성하기</>
+                  )}
+                </button>
+              )}
             </section>
+
+            {/* ── 초안 분류 섹션 ── */}
+            {inputMode === 'classify' && (
+              <section className="flex flex-col gap-3 animate-in fade-in duration-200">
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    블로그 초안을 붙여넣으면 AI가 🎣&nbsp;헤드라인 · 🏗️&nbsp;구조 · ✍️&nbsp;본문 3가지로 자동 분류해줍니다.
+                  </p>
+                  <textarea
+                    placeholder="블로그 초안 또는 정제되지 않은 원문을 여기에 붙여넣어 주세요..."
+                    value={classifyText}
+                    onChange={(e) => setClassifyText(e.target.value)}
+                    disabled={classifyStatus === 'loading'}
+                    className="w-full h-40 p-4 bg-white border border-slate-200 rounded-md text-base focus:ring-2 focus:ring-violet-400 outline-none resize-none disabled:opacity-50"
+                  />
+                  <div className="flex justify-between items-center">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const t = await navigator.clipboard.readText();
+                          if (t.length > 5) { setClassifyText(t); addToast('텍스트를 붙여넣었습니다.', 'success'); }
+                          else addToast('복사된 텍스트가 너무 짧습니다.', 'error');
+                        } catch { addToast('클립보드 접근 권한이 필요합니다.', 'error'); }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-600 rounded-full text-xs font-medium hover:bg-violet-100 transition-colors"
+                    >
+                      <ClipboardIcon />복사한 텍스트 붙여넣기
+                    </button>
+                    <span className="text-xs text-slate-400">{classifyText.length} / 8000자</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleClassify}
+                  disabled={classifyStatus === 'loading'}
+                  className="w-full h-12 flex items-center justify-center gap-2 rounded-md font-medium bg-gradient-to-r from-violet-600 to-blue-600 text-white disabled:opacity-50 active:scale-[0.98] transition-all shadow-sm"
+                >
+                  {classifyStatus === 'loading' ? (
+                    <><div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> 분류 중...</>
+                  ) : (
+                    <>✨ 스마트 분류하기</>
+                  )}
+                </button>
+
+                {/* 분류 로딩 스켈레톤 */}
+                {classifyStatus === 'loading' && (
+                  <div className="flex flex-col gap-3 mt-2">
+                    {['🎣 후킹 헤드라인 분석 중...', '🏗️ 구조 설계 추출 중...', '✍️ 본문 내용 정리 중...'].map((label, i) => (
+                      <div key={i} className="p-4 bg-white border border-slate-100 rounded-xl shadow-sm animate-pulse">
+                        <div className="text-xs text-slate-400 mb-2">{label}</div>
+                        <div className="h-3 bg-slate-100 rounded w-3/4 mb-2" />
+                        <div className="h-3 bg-slate-100 rounded w-1/2" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 분류 결과 */}
+                {classifyStatus === 'success' && classifyResult && (
+                  <div className="mt-2">
+                    <ClassifySection result={classifyResult} onToast={addToast} />
+                  </div>
+                )}
+              </section>
+            )}
 
             {status === 'loading' && (
               <section className="flex flex-col gap-4 animate-in fade-in duration-300">
@@ -489,6 +603,42 @@ export default function App() {
                   </div>
 
                   <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col gap-6">
+                    {result.blog.seo && (
+                      <>
+                        <div className="flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <SparklesIcon />
+                            <span className="text-sm font-bold text-slate-800">SEO (검색 엔진 최적화) 데이터</span>
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">메타 타이틀</span>
+                            <p className="text-sm text-slate-800 mt-1">{result.blog.seo.meta_title}</p>
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded">메타 디스크립션</span>
+                            <p className="text-sm text-slate-800 mt-1">{result.blog.seo.meta_description}</p>
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded">타겟 키워드 태그</span>
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {result.blog.seo.keywords.map((kw, i) => (
+                                <span key={i} className="text-xs bg-white text-slate-700 border border-slate-200 font-medium px-2 py-0.5 rounded-full">
+                                  #{kw.replace(/^#+/, '')}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleCopy(`[SEO 메타 타이틀]\n${result.blog.seo!.meta_title}\n\n[SEO 소개글]\n${result.blog.seo!.meta_description}\n\n[추천 키워드]\n${result.blog.seo!.keywords.map(k => '#' + k.replace(/^#+/, '')).join(' ')}`, 'seo')}
+                            className={`mt-1 w-full h-9 font-medium text-sm rounded-md flex items-center justify-center gap-1.5 transition-colors ${copiedStates['seo'] ? 'bg-slate-200 text-slate-800' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                          >
+                            {copiedStates['seo'] ? <><CheckIcon /> 복사 성공!</> : <><ClipboardIcon /> SEO 데이터 통합 복사</>}
+                          </button>
+                        </div>
+                        <hr className="border-slate-100" />
+                      </>
+                    )}
+                    
                     <div className="flex flex-col gap-2">
                       <span className="text-sm font-semibold text-slate-500 bg-slate-100 w-fit px-2 py-1 rounded">추천 제목</span>
                       <ul className="text-base text-slate-800 list-disc list-inside space-y-1">
