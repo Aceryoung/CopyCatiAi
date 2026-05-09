@@ -771,8 +771,10 @@ export default function App() {
                           {blogTone === 'professional' ? '전문가형 말투' : blogTone === 'casual' ? '친근한 구어체' : '경험담 스토리'}
                         </span>
                       </div>
-                      <div className="text-base md:text-lg leading-loose text-slate-700 whitespace-pre-wrap">
-                        {renderHighlightedText(result.blog[blogTone] || result.blog.body_markdown || '')}
+                      <div className="flex flex-col items-center w-full my-4">
+                        <div className="text-left w-fit break-keep leading-relaxed space-y-2 text-base md:text-lg text-slate-700 whitespace-pre-wrap">
+                          {renderHighlightedText(result.blog[blogTone] || result.blog.body_markdown || '')}
+                        </div>
                       </div>
                       {/* 넛지 안내 */}
                       <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg mt-1">
@@ -846,8 +848,10 @@ export default function App() {
                             <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✅ 완료</span>
                           )}
                         </div>
-                        <div className="text-sm md:text-base leading-loose text-slate-700 whitespace-pre-wrap max-h-[400px] overflow-y-auto">
-                          {renderHighlightedText(fullBlogContent)}
+                        <div className="flex flex-col items-center w-full my-4 max-h-[400px] overflow-y-auto">
+                          <div className="text-left w-fit break-keep leading-relaxed space-y-2 text-sm md:text-base text-slate-700 whitespace-pre-wrap">
+                            {renderHighlightedText(fullBlogContent)}
+                          </div>
                         </div>
                         {fullBlogStatus === 'success' && (
                           <button
