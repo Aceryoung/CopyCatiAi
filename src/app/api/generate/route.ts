@@ -10,6 +10,7 @@ export const maxDuration = 60;
 
 // 블로그 3종 말투를 한 번에 생성하는 스키마
 const contentSchema = z.object({
+  image_summary: z.string().optional().describe('이미지에서 파악 가능한 제품 특징 1줄 요약. 이미지가 아니거나 정보 추출이 불가능하면 "정보 없음" 반환'),
   instagram: z.object({
     info: z.string().describe('카드뉴스용 정보성 문구 (혜택 중심)'),
     emotional: z.string().describe('스토리텔링 감성형 문구 (라이프스타일 중심)'),
@@ -73,6 +74,7 @@ function extractBodyText(markdown: string, maxLen = 3500): string {
 export async function POST(req: NextRequest) {
   // ── 이슈 1·2를 위해 크레딧 선차감 여부 추적 ──
   let creditDeducted = false;
+  let deductAmount = 1;
   const supabase = await createClient();
   let userId: string | null = null;
 
@@ -95,6 +97,10 @@ export async function POST(req: NextRequest) {
     const scrapedText: string | undefined = body?.scraped_text;
     const manualText: string | undefined = body?.manual_text;
     const userReview: string = body?.userReview ?? '';  // 유저 경험담 (선택)
+    const sourceType: string = body?.source_type ?? 'url'; // 'url' | 'image'
+    const base64Image: string | undefined = body?.image_data;
+
+    deductAmount = sourceType === 'image' ? 2 : 1;
 
     // ── 4. URL 크롤링 또는 수동 텍스트 ──
     let contentText = scrapedText || manualText || '';
@@ -151,7 +157,7 @@ export async function POST(req: NextRequest) {
 
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).rpc('refund_credit', { p_user_id: userId });
+          await (supabase as any).rpc('refund_credit', { p_user_id: userId, p_refund_amount: deductAmount });
         } catch (refundErr) {
           console.error('[generate] 크레딧 환불 실패:', refundErr);
         }
@@ -176,13 +182,16 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 5. [이슈 3] Jina 마크다운 본문 추출 (네비게이션 스킵) ──
-    const cleanText = extractBodyText(contentText, 3500);
-    console.log('[generate] cleanText 길이:', cleanText.length, 'chars (after body extraction)');
+    let cleanText = contentText;
+    if (sourceType !== 'image') {
+      cleanText = extractBodyText(contentText, 3500);
+      console.log('[generate] cleanText 길이:', cleanText.length, 'chars (after body extraction)');
+    }
 
     // ── 6. AI 생성 (블로그 3종 말투 동시 생성) ──
     console.log("[generate] 블로그 3종 말투 동시 생성 시작");
 
-    const { object } = await generateObject({
+    const generateOptions: any = {
       model: openai("gpt-4o-mini"),
       schema: contentSchema,
       system: `당신은 10년 차 탑티어 마케터이자 전문 리뷰/정보 블로거입니다. 독자와 대화하듯 친밀하고 신뢰감 있는 톤을 유지해야 합니다.
@@ -216,10 +225,24 @@ export async function POST(req: NextRequest) {
 2. 2문장이 끝날 때마다 반드시 줄바꿈(Enter 2번, \n\n)을 넣어 모바일 화면의 여백을 확보해라.
 3. 시선이 집중될 수 있도록 핵심 키워드나 결론은 문단 맨 앞(두괄식)에 배치해라.
 4. 단락이 전환될 때는 마크다운 소제목(###)을 적극 활용하고, 그 위아래로 빈 줄을 넉넉히 추가해라.
-5. 네이버 블로그 복사 시 숫자 정렬이 깨지는 것을 방지하기 위해, 문장 맨 앞에 마크다운 숫자 목록(1., 2., 3.)이나 기본 불릿(-, *) 사용을 엄격히 금지한다. 리스트가 필요할 경우 무조건 문장 맨 앞에 기호(✔️, 📌, ✨)를 텍스트로 직접 입력해라.`,
-      prompt: `주제:
-${cleanText}${userReview.trim().length > 0 ? `\n\n[유저 실제 경험담 — 반드시 본문에 자연스럽게 포함]\n${userReview}` : ''}`,
-    });
+5. 네이버 블로그 복사 시 숫자 정렬이 깨지는 것을 방지하기 위해, 문장 맨 앞에 마크다운 숫자 목록(1., 2., 3.)이나 기본 불릿(-, *) 사용을 엄격히 금지한다. 리스트가 필요할 경우 무조건 문장 맨 앞에 기호(✔️, 📌, ✨)를 텍스트로 직접 입력해라.`
+    };
+
+    if (sourceType === 'image' && base64Image) {
+      generateOptions.messages = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `주제: 업로드된 이미지를 분석하여 상품 정보를 추출하고, 유저 리뷰가 있다면 반영하여 마케팅 블로그 초안을 작성해주세요.${userReview.trim().length > 0 ? `\n\n[유저 실제 경험담 — 반드시 본문에 자연스럽게 포함]\n${userReview}` : ''}` },
+            { type: 'image', image: base64Image }
+          ]
+        }
+      ];
+    } else {
+      generateOptions.prompt = `주제:\n${cleanText}${userReview.trim().length > 0 ? `\n\n[유저 실제 경험담 — 반드시 본문에 자연스럽게 포함]\n${userReview}` : ''}`;
+    }
+
+    const { object } = await generateObject(generateOptions);
 
     // ── 7. DB 저장 + 크레딧 차감 (save_generation_and_deduct가 원자적으로 처리) ──
     try {
@@ -233,8 +256,11 @@ ${cleanText}${userReview.trim().length > 0 ? `\n\n[유저 실제 경험담 — �
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error: dbError } = await (supabase as any).rpc('save_generation_and_deduct', {
         p_user_id: userId,
-        p_source_url: sourceUrl || '수동입력',
+        p_source_url: sourceType === 'image' ? null : (sourceUrl || '수동입력'),
         p_content_json: object,
+        p_source_type: sourceType,
+        p_source_summary: (object as any).image_summary || null,
+        p_deduct_amount: deductAmount
       });
 
       if (dbError) {
@@ -258,7 +284,7 @@ ${cleanText}${userReview.trim().length > 0 ? `\n\n[유저 실제 경험담 — �
     if (creditDeducted && supabase && userId) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).rpc('refund_credit', { p_user_id: userId });
+        await (supabase as any).rpc('refund_credit', { p_user_id: userId, p_refund_amount: deductAmount });
         console.log('[generate] 크레딧 환불 완료 (에러 발생으로 인한 롤백)');
       } catch (refundErr) {
         console.error('[generate] 크레딧 환불 실패:', refundErr);

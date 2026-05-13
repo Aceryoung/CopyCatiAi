@@ -9,6 +9,7 @@ import { PricingModal } from './components/PricingModal';
 import { ClassifySection } from './components/ClassifySection';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { marked } from 'marked';
+import imageCompression from 'browser-image-compression';
 
 
 // --- [아이콘 컴포넌트] ---
@@ -70,11 +71,13 @@ export default function App() {
   const [showHistorySheet, setShowHistorySheet] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [historyItems, setHistoryItems] = useState<Array<{id: string; source_url: string; created_at: string; content_json: any}>>([]);
+  const [historyItems, setHistoryItems] = useState<Array<{id: string; source_url: string; source_type?: string; source_summary?: string; created_at: string; content_json: any}>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [credits, setCredits] = useState<number | null>(null);
 
   const [inputMode, setInputMode] = useState('url');
+  const [base64Image, setBase64Image] = useState<string | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [url, setUrl] = useState('');
   const [manualText, setManualText] = useState('');
   const [blogTone, setBlogTone] = useState<'professional' | 'casual' | 'story'>('professional');
@@ -201,6 +204,34 @@ export default function App() {
     }
   };
 
+  // --- [이미지 업로드 및 최적화 로직] ---
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const options = {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1000,
+        useWebWorker: true,
+      };
+
+      const compressedFile = await imageCompression(file, options);
+      const dataUrl = await imageCompression.getDataUrlFromFile(compressedFile);
+
+      // Base64 변환 시 용량이 33% 증가하므로, 압축 후 데이터 크기가 4.5MB 초과 시 차단
+      if (dataUrl.length > 4.5 * 1024 * 1024) {
+        return addToast("압축 후에도 이미지 용량이 너무 큽니다.", "error");
+      }
+
+      setBase64Image(dataUrl);
+      setImagePreviewUrl(URL.createObjectURL(compressedFile));
+    } catch (error) {
+      console.error('Image compression error:', error);
+      addToast("이미지 압축에 실패했습니다.", "error");
+    }
+  };
+
   // --- [블로그 초안 분류 핸들러] ---
   const handleClassify = async () => {
     if (classifyText.trim().length < 20) {
@@ -238,6 +269,11 @@ export default function App() {
   const handleGenerate = async () => {
     if (inputMode === 'url' && !url.trim()) return addToast("상품 URL을 입력해 주세요.", "error");
     if (inputMode === 'text' && manualText.trim().length < 10) return addToast("상품 설명 텍스트를 10자 이상 입력해 주세요.", "error");
+    if (inputMode === 'image' && !base64Image) return addToast("이미지를 첨부해 주세요.", "error");
+    if (inputMode === 'image' && credits !== null && credits < 2) {
+      addToast("이미지 분석에는 2 크레딧이 필요합니다. 충전 후 이용해주세요.", "error");
+      return setShowPricingModal(true);
+    }
 
     setStatus('loading');
     setShowDeepLink(null);
@@ -251,8 +287,10 @@ export default function App() {
         },
         body: JSON.stringify(
           inputMode === 'text'
-            ? { manual_text: manualText, userReview }
-            : { source_url: url, userReview }
+            ? { manual_text: manualText, userReview, source_type: 'text' }
+            : inputMode === 'image'
+            ? { image_data: base64Image, source_url: null, source_type: 'image', userReview }
+            : { source_url: url, userReview, source_type: 'url' }
         ),
       });
 
@@ -298,6 +336,11 @@ export default function App() {
   const handleFullGenerate = async () => {
     if (inputMode === 'url' && !url.trim()) return addToast('상품 URL을 입력해 주세요.', 'error');
     if (inputMode === 'text' && manualText.trim().length < 10) return addToast('상품 설명을 10자 이상 입력해 주세요.', 'error');
+    if (inputMode === 'image' && !base64Image) return addToast("이미지를 첨부해 주세요.", "error");
+    if (inputMode === 'image' && credits !== null && credits < 2) {
+      addToast("이미지 분석에는 2 크레딧이 필요합니다. 충전 후 이용해주세요.", "error");
+      return setShowPricingModal(true);
+    }
 
     setFullBlogStatus('loading');
     setFullBlogContent(DISCLAIMER + '✍️ AI가 완전체 블로그를 작성하고 있습니다...');
@@ -308,8 +351,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           inputMode === 'text'
-            ? { manual_text: manualText, userReview }
-            : { source_url: url, userReview }
+            ? { manual_text: manualText, userReview, source_type: 'text' }
+            : inputMode === 'image'
+            ? { image_data: base64Image, source_url: null, source_type: 'image', userReview }
+            : { source_url: url, userReview, source_type: 'url' }
         ),
       });
 
@@ -358,6 +403,8 @@ export default function App() {
   const handleReset = () => {
     setUrl('');
     setManualText('');
+    setBase64Image(null);
+    setImagePreviewUrl(null);
     setResult(null);
     setStatus('idle');
     setInputMode('url');
@@ -479,6 +526,12 @@ export default function App() {
                   링크로 입력
                 </button>
                 <button
+                  onClick={() => setInputMode('image')}
+                  className={`flex-1 rounded-md text-xs font-medium transition-all ${inputMode === 'image' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                >
+                  이미지 첨부
+                </button>
+                <button
                   onClick={() => setInputMode('text')}
                   className={`flex-1 rounded-md text-xs font-medium transition-all ${inputMode === 'text' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
                 >
@@ -528,6 +581,26 @@ export default function App() {
                       <ClipboardIcon />복사한 텍스트 붙여넣기
                     </button>
                   </div>
+                </div>
+              )}
+
+              {inputMode === 'image' && (
+                <div className="flex flex-col gap-2 animate-in fade-in duration-200">
+                  <label className="w-full h-32 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-md bg-white hover:bg-slate-50 cursor-pointer transition-colors relative overflow-hidden">
+                    {imagePreviewUrl ? (
+                      <img src={imagePreviewUrl} alt="Preview" className="absolute inset-0 w-full h-full object-contain opacity-80" />
+                    ) : (
+                      <>
+                        <span className="text-2xl">📸</span>
+                        <span className="text-sm font-medium text-slate-500">상세페이지 캡처 업로드</span>
+                      </>
+                    )}
+                    <input type="file" accept="image/jpeg, image/png, image/webp, image/heic" className="hidden" onChange={handleImageUpload} disabled={status === 'loading'} />
+                  </label>
+                  <p className="text-xs text-slate-400 leading-relaxed px-1">
+                    텍스트가 없는 상세페이지인가요? 핵심 이미지 1장을 올려주세요. <br/>
+                    <span className="font-semibold text-blue-500">비전 AI 분석: 2 크레딧 차감</span>
+                  </p>
                 </div>
               )}
 
@@ -962,7 +1035,9 @@ export default function App() {
                   >
                     <div className="flex-1 min-w-0 flex flex-col gap-1">
                       <p className="text-sm font-medium text-slate-800 truncate">
-                        {item.source_url === '수동입력' ? '📝 텍스트 직접 입력' : `🔗 ${item.source_url || '상품 URL'}`}
+                        {item.source_type === 'image' 
+                          ? `📸 이미지 생성 ${item.source_summary ? `(${item.source_summary})` : ''}` 
+                          : item.source_url === '수동입력' ? '📝 텍스트 직접 입력' : `🔗 ${item.source_url || '상품 URL'}`}
                       </p>
                       <p className="text-xs text-slate-400">
                         {(() => {

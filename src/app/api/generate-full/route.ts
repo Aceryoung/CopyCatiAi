@@ -56,6 +56,10 @@ export async function POST(req: NextRequest) {
     const sourceUrl: string = body?.source_url ?? '';
     const manualText: string = body?.manual_text ?? '';
     const userReview: string = body?.userReview ?? '';
+    const sourceType: string = body?.source_type ?? 'url'; // 'url' | 'image'
+    const base64Image: string | undefined = body?.image_data;
+    
+    const deductAmount = sourceType === 'image' ? 2 : 1;
 
     // ── 3. 크레딧 확인 (선차감 없이 잔액만 확인) ──
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,13 +69,13 @@ export async function POST(req: NextRequest) {
       .eq('id', userId)
       .single();
 
-    if (!profile || profile.credits <= 0) {
+    if (!profile || profile.credits < deductAmount) {
       return Response.json({ error: 'INSUFFICIENT_CREDITS' }, { status: 402 });
     }
 
     // ── 4. 콘텐츠 수집 (URL 크롤링 or 수동 텍스트) ──
     let contentText = manualText;
-    if (!contentText && sourceUrl) {
+    if (sourceType !== 'image' && !contentText && sourceUrl) {
       try {
         const headers: Record<string, string> = { Accept: 'text/markdown' };
         if (process.env.JINA_API_KEY) {
@@ -89,11 +93,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!contentText || contentText.trim().length < 30) {
+    if (sourceType !== 'image' && (!contentText || contentText.trim().length < 30)) {
       return Response.json({ error: 'CONTENT_TOO_SHORT: 내용이 너무 짧습니다.' }, { status: 400 });
     }
 
-    const cleanText = extractBodyText(contentText, 4000);
+    const cleanText = sourceType === 'image' ? '' : extractBodyText(contentText, 4000);
 
     // ── 5. 시스템 프롬프트 구성 ──
     let systemPrompt = `당신은 10년 차 탑티어 마케터이자 전문 리뷰 블로거입니다.
@@ -121,20 +125,22 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 6. 스트리밍 생성 (504 방어) ──
-    const streamResult = streamText({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const generateOptions: any = {
       model: openai('gpt-4o-mini'),
       system: systemPrompt,
-      prompt: `다음 상품/서비스 정보를 바탕으로 완전한 네이버 블로그 본문을 작성해주세요:\n\n${cleanText}`,
       maxOutputTokens: 3000,
-      onFinish: async ({ text }) => {
+      onFinish: async ({ text }: { text: string }) => {
         // ── 7. 스트리밍 완료 후 DB 저장 + 크레딧 차감 (원자적) ──
         try {
           const fullContent = `${DISCLAIMER}${text}\n\n${DISCLAIMER}`;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (supabase as any).rpc('save_generation_and_deduct', {
             p_user_id: userId,
-            p_source_url: sourceUrl || '수동입력',
+            p_source_url: sourceType === 'image' ? null : (sourceUrl || '수동입력'),
             p_content_json: { full_blog: fullContent, mode: 'full' },
+            p_source_type: sourceType,
+            p_deduct_amount: deductAmount
           });
           console.log('[generate-full] ✅ 저장+차감 완료');
         } catch (dbErr) {
@@ -142,7 +148,23 @@ export async function POST(req: NextRequest) {
           console.error('[generate-full] DB save failed (non-fatal):', dbErr);
         }
       },
-    });
+    };
+
+    if (sourceType === 'image' && base64Image) {
+      generateOptions.messages = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `주제: 업로드된 이미지를 분석하여 상품 정보를 추출하고, 유저 리뷰가 있다면 반영하여 마케팅 블로그 초안을 작성해주세요.` },
+            { type: 'image', image: base64Image }
+          ]
+        }
+      ];
+    } else {
+      generateOptions.prompt = `다음 상품/서비스 정보를 바탕으로 완전한 네이버 블로그 본문을 작성해주세요:\n\n${cleanText}`;
+    }
+
+    const streamResult = streamText(generateOptions);
 
     // 크레딧은 onFinish 성공 시만 차감 → 스트림 실패 시 자동 롤백 없음 (미차감 상태)
     return streamResult.toTextStreamResponse();
