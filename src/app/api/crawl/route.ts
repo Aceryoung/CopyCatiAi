@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Pro 플랜: 60초, Hobby: 10초로 낮추세요
 
 
@@ -130,6 +131,10 @@ export async function POST(req: NextRequest) {
 
     if (!sourceUrl) {
       return NextResponse.json({ error: 'MISSING_SOURCE_URL' }, { status: 400 });
+    }
+
+    if (sourceUrl.length > 2048) {
+      return NextResponse.json({ error: 'PAYLOAD_TOO_LARGE: URL 길이가 너무 깁니다.' }, { status: 413 });
     }
 
     try {

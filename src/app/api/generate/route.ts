@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 
@@ -100,7 +101,30 @@ export async function POST(req: NextRequest) {
     const sourceType: string = body?.source_type ?? 'url'; // 'url' | 'image'
     const base64Image: string | undefined = body?.image_data;
 
+    // ── 2.5 Payload 길이 검증 (어뷰징 방어) ──
+    if (sourceUrl.length > 2048) {
+      return NextResponse.json({ error: 'PAYLOAD_TOO_LARGE: URL 길이가 너무 깁니다.' }, { status: 413 });
+    }
+    if ((scrapedText?.length || 0) > 15000 || (manualText?.length || 0) > 15000) {
+      return NextResponse.json({ error: 'PAYLOAD_TOO_LARGE: 입력 텍스트가 너무 깁니다 (최대 15000자).' }, { status: 413 });
+    }
+    if (userReview.length > 3000) {
+      return NextResponse.json({ error: 'PAYLOAD_TOO_LARGE: 유저 리뷰가 너무 깁니다 (최대 3000자).' }, { status: 413 });
+    }
+
     deductAmount = sourceType === 'image' ? 2 : 1;
+
+    // ── 3. 크레딧 사전 체크 (Pre-generation Check) ──
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: profile } = await (supabase as any)
+      .from('profiles')
+      .select('credits')
+      .eq('id', userId)
+      .single();
+
+    if (!profile || profile.credits < deductAmount) {
+      return NextResponse.json({ error: 'INSUFFICIENT_CREDITS: 크레딧이 부족합니다.' }, { status: 402 });
+    }
 
     // ── 4. URL 크롤링 또는 수동 텍스트 ──
     let contentText = scrapedText || manualText || '';
@@ -194,6 +218,7 @@ export async function POST(req: NextRequest) {
     const generateOptions: any = {
       model: openai("gpt-4o-mini"),
       schema: contentSchema,
+      temperature: 0.9,
       system: `당신은 10년 차 탑티어 마케터이자 전문 리뷰/정보 블로거입니다. 독자와 대화하듯 친밀하고 신뢰감 있는 톤을 유지해야 합니다.
 제공된 [입력 데이터/URL 콘텐츠]를 바탕으로, 단순 스펙 나열은 배제하고 고객의 페인포인트(Pain Point)를 해결해주는 매력적인 글을 작성하세요.
 
@@ -201,7 +226,7 @@ export async function POST(req: NextRequest) {
 1. 100% 자연스러운 한국어로만 작성하세요. (기계 번역 어투 절대 금지)
 2. 배송 안내, 교환/환불 규정, 단순 고객센터 안내 등 마케팅 본질과 무관한 내용은 완전히 제외하세요.
 3. 제품/서비스의 핵심 매력, 차별화 포인트, 고객이 얻는 실질적 혜택(USP)에만 집중하세요.
-4. "매력적인 도입부", "본문", "확실한 마무리"와 같은 지시어 자체를 절대로 텍스트나 제목으로 출력하지 마세요. 대신 해당 기능에 맞는, 사람을 훅(Hook)하게 만드는 진짜 소제목(H2/H3)을 창작해 사용하세요.
+4. "매력적인 도입부", "본문", "확실한 마무리"와 같은 지시어 자체를 절대로 텍스트이나 제목으로 출력하지 마세요. 대신 해당 기능에 맞는, 사람을 훅(Hook)하게 만드는 진짜 소제목(H2/H3)을 창작해 사용하세요.
 5. 블로그 초안은 지시된 3가지 페르소나(Professional, Casual, Story)에 맞추어 각각 다른 서사 구조와 전개 방식으로 완전히 새롭게 작성해야 합니다.
 6. 한 문단은 최대 3~4문장을 넘지 않게 짧게 끊어 쓰되, 전체 분량이 매우 상세하고 풍성해지도록(최소 1500자 이상) 문단의 개수를 충분히 많이 작성하세요. 중요한 단어에는 볼드체(**강조**)를 적용하고 내용에 맞는 이모지도 적절히 배치하세요.
 7. 네이버 블로그, 티스토리, 워드프레스 등 주요 검색 포털 노출(SEO)을 극대화할 수 있도록 제목과 본문에 핵심 타겟 키워드를 자연스럽게 녹여내고, 최적의 SEO 추천 정보(SEO 메타 타이틀, 디스크립션, 추천 키워드 태그)를 함께 도출하세요.
@@ -226,7 +251,11 @@ export async function POST(req: NextRequest) {
 3. 시선이 집중될 수 있도록 핵심 키워드나 결론은 문단 맨 앞(두괄식)에 배치해라.
 4. 단락이 전환될 때는 마크다운 소제목(###)을 적극 활용하고, 그 위아래로 빈 줄을 넉넉히 추가해라.
 5. 네이버 블로그 복사 시 숫자 정렬이 깨지는 것을 방지하기 위해, 문장 맨 앞에 마크다운 숫자 목록(1., 2., 3.)이나 기본 불릿(-, *) 사용을 엄격히 금지한다. 리스트가 필요할 경우 무조건 문장 맨 앞에 기호(✔️, 📌, ✨)를 텍스트로 직접 입력해라.
-6. 제공된 이미지에 배송, 교환/환불, CS 규정, 사이즈표 등 비즈니스 운영과 관련된 텍스트가 포함되어 있다면 100% 무시해라. 오직 상품의 매력, 후킹 포인트, 특장점에만 집중해서 블로그 본문을 작성해라.`
+6. 제공된 이미지에 배송, 교환/환불, CS 규정, 사이즈표 등 비즈니스 운영과 관련된 텍스트가 포함되어 있다면 100% 무시해라. 오직 상품의 매력, 후킹 포인트, 특장점에만 집중해서 블로그 본문을 작성해라.
+
+[🚨 유사 문서 및 어뷰징 방어 특별 규칙 🚨]
+1. 유사 문서 방어: 너는 네이버 블로그 상위 노출 전문가다. 매 생성 시마다 문장 구조, 어미(~해요, ~입니다, ~음/함 등), 이모지의 종류와 배치 순서를 100% 무작위(Random)로 다르게 작성하여 복제 문서 판정을 완벽히 회피하라.
+2. 사진 배치 가이드: 텍스트만 연속으로 나열하지 마라. 본문 중간중간 독자의 지루함을 깰 수 있는 타이밍 3곳을 선정하여, "[📸 꿀팁: 여기에 상품의 실제 질감이 잘 보이는 근접 사진을 한 장 배치해 주세요]" 와 같은 구체적인 사진 촬영 및 배치 가이드 문구를 삽입하라.`
     };
 
     if (sourceType === 'image' && base64Image) {

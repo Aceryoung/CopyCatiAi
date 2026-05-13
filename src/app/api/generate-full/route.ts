@@ -59,6 +59,17 @@ export async function POST(req: NextRequest) {
     const sourceType: string = body?.source_type ?? 'url'; // 'url' | 'image'
     const base64Image: string | undefined = body?.image_data;
     
+    // ── 2.5 Payload 길이 검증 (어뷰징 방어) ──
+    if (sourceUrl.length > 2048) {
+      return Response.json({ error: 'PAYLOAD_TOO_LARGE: URL 길이가 너무 깁니다.' }, { status: 413 });
+    }
+    if (manualText.length > 15000) {
+      return Response.json({ error: 'PAYLOAD_TOO_LARGE: 입력 텍스트가 너무 깁니다 (최대 15000자).' }, { status: 413 });
+    }
+    if (userReview.length > 3000) {
+      return Response.json({ error: 'PAYLOAD_TOO_LARGE: 유저 리뷰가 너무 깁니다 (최대 3000자).' }, { status: 413 });
+    }
+    
     const deductAmount = sourceType === 'image' ? 2 : 1;
 
     // ── 3. 크레딧 확인 (선차감 없이 잔액만 확인) ──

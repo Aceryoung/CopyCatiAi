@@ -16,10 +16,9 @@ export async function GET() {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from('generations')
-      .select('id, source_url, created_at, content_json')
+      .select('id, source_url, source_type, source_summary, created_at, content_json')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(20);
