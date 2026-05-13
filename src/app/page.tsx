@@ -209,27 +209,70 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    try {
-      const options = {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 1000,
-        useWebWorker: true,
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = async () => {
+        let targetFile: File | Blob = file;
+
+        // 극단적인 세로형 이미지 체크 (1:3 이상)
+        if (img.height >= img.width * 3) {
+          const canvas = document.createElement('canvas');
+          const cropHeight = Math.min(img.height, 3000);
+          canvas.width = img.width;
+          canvas.height = cropHeight;
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            addToast("브라우저에서 이미지를 자를 수 없습니다.", "error");
+            return;
+          }
+          
+          // 상단 cropHeight 만큼만 그리기
+          ctx.drawImage(img, 0, 0, img.width, cropHeight, 0, 0, img.width, cropHeight);
+          
+          // Blob으로 변환
+          try {
+            targetFile = await new Promise<Blob>((resolve, reject) => {
+              canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error("Canvas to Blob failed"));
+              }, file.type || 'image/jpeg');
+            });
+          } catch (err) {
+            console.error('Canvas crop error:', err);
+            addToast("이미지 자르기에 실패했습니다.", "error");
+            return;
+          }
+        }
+
+        try {
+          const options = {
+            maxSizeMB: 1,
+            maxWidthOrHeight: 1000,
+            useWebWorker: true,
+            // Blob을 처리하기 위해 fileType 명시
+            fileType: file.type || 'image/jpeg'
+          };
+
+          const compressedFile = await imageCompression(targetFile as File, options);
+          const dataUrl = await imageCompression.getDataUrlFromFile(compressedFile);
+
+          // Base64 변환 시 용량이 33% 증가하므로, 압축 후 데이터 크기가 4.5MB 초과 시 차단
+          if (dataUrl.length > 4.5 * 1024 * 1024) {
+            return addToast("압축 후에도 이미지 용량이 너무 큽니다.", "error");
+          }
+
+          setBase64Image(dataUrl);
+          setImagePreviewUrl(URL.createObjectURL(compressedFile));
+        } catch (error) {
+          console.error('Image compression error:', error);
+          addToast("이미지 압축에 실패했습니다.", "error");
+        }
       };
-
-      const compressedFile = await imageCompression(file, options);
-      const dataUrl = await imageCompression.getDataUrlFromFile(compressedFile);
-
-      // Base64 변환 시 용량이 33% 증가하므로, 압축 후 데이터 크기가 4.5MB 초과 시 차단
-      if (dataUrl.length > 4.5 * 1024 * 1024) {
-        return addToast("압축 후에도 이미지 용량이 너무 큽니다.", "error");
-      }
-
-      setBase64Image(dataUrl);
-      setImagePreviewUrl(URL.createObjectURL(compressedFile));
-    } catch (error) {
-      console.error('Image compression error:', error);
-      addToast("이미지 압축에 실패했습니다.", "error");
-    }
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   // --- [블로그 초안 분류 핸들러] ---
@@ -599,7 +642,8 @@ export default function App() {
                   </label>
                   <p className="text-xs text-slate-400 leading-relaxed px-1">
                     텍스트가 없는 상세페이지인가요? 핵심 이미지 1장을 올려주세요. <br/>
-                    <span className="font-semibold text-blue-500">비전 AI 분석: 2 크레딧 차감</span>
+                    <span className="font-semibold text-blue-500">비전 AI 분석: 2 크레딧 차감</span><br/>
+                    <span className="font-medium text-red-500 mt-1 block">🚨 너무 긴 통짜 이미지는 글자가 작아져 AI가 읽지 못할 수 있습니다. 핵심 내용만 캡처해서 올리면 블로그 글의 퀄리티가 200% 상승합니다!</span>
                   </p>
                 </div>
               )}
